@@ -43,7 +43,13 @@ namespace Onec.DebugAdapter.V8
                 "/O Normal"
             };
 
-            var exePath = Path.Join(_configuration.PlatformBin, "1cv8c.exe");
+            var exePath = Path.Join(
+                _configuration.PlatformBin, 
+                Environment.OSVersion.Platform switch
+                {
+                    PlatformID.Win32NT => "1cv8c.exe",
+                    _ => "1cv8c"
+                });
             if (!File.Exists(exePath))
                 throw new Exception("Исполняемый файл клиента 1С не найден");
 

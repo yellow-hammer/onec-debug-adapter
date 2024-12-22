@@ -22,7 +22,7 @@ namespace Onec.DebugAdapter.V8
             var iBasesPath = Environment.OSVersion.Platform switch
             {
                 PlatformID.Win32NT => Path.Join(basePath, @"1C\1CEStart\ibases.v8i"),
-                _ => Path.Join(basePath, @".1C\1CEStart\ibases.v8i"),
+                _ => Path.Join(basePath, @".1C", "1cestart", "ibases.v8i"),
             };
 
             if (File.Exists(iBasesPath))

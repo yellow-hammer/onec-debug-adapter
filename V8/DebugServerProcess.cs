@@ -1,26 +1,19 @@
 ﻿using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
-using Onec.DebugAdapter.DebugServer;
 using Onec.DebugAdapter.Extensions;
 using Onec.DebugAdapter.Services;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Onec.DebugAdapter.V8
 {
-	public class DebugServerProcess : IDisposable
+	public sealed class DebugServerProcess : IDisposable
 	{
 		private readonly IDebugConfiguration _configuration;
 		private DebugProtocolClient _client = null!;
 		private bool _needSendEvent = true;
 
 		private Process? _process;
-		private bool disposedValue;
+		private bool _disposedValue;
 
 		public DebugServerProcess(IDebugConfiguration configuration)
 		{
@@ -42,9 +35,16 @@ namespace Onec.DebugAdapter.V8
 				$"--notify=\"{notifyFilePath}\""
 			};
 
-			var exePath = Path.Join(_configuration.PlatformBin, "dbgs.exe");
+			var exePath = Path.Join(
+				_configuration.PlatformBin, 
+				Environment.OSVersion.Platform switch
+				{
+					PlatformID.Win32NT => "dbgs.exe",
+					_ => "dbgs"
+				});
+			
 			if (!File.Exists(exePath))
-				throw new System.Exception("Исполняемый файл сервера отладки 1С не найден");
+				throw new Exception("Исполняемый файл сервера отладки 1С не найден");
 
 			_process = new Process
 			{
@@ -63,17 +63,18 @@ namespace Onec.DebugAdapter.V8
 				{
 					try
 					{
-						using var stream = File.Open(notifyFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+						await using var stream = File.Open(notifyFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 						using var reader = new StreamReader(stream);
 
-						if (stream.Length > 0)
-						{
-							var notifyData = reader.ReadToEnd();
-							_configuration.SetDebugServerPort(int.Parse(notifyData.Split(':')[1]));
-							break;
-						}
+						if (stream.Length <= 0) continue;
+						var notifyData = await reader.ReadToEndAsync();
+						_configuration.SetDebugServerPort(int.Parse(notifyData.Split(':')[1]));
+						break;
 					}
-					catch (System.Exception) { }
+					catch (Exception)
+					{
+						// ignored
+					}
 				}
 				else
 					await Task.Delay(25);
@@ -85,33 +86,29 @@ namespace Onec.DebugAdapter.V8
 
 		private void DebuggerExited(object? sender, EventArgs e)
 		{
-			if (_needSendEvent)
-			{
-				if (_process?.ExitCode != 0)
-					_client.SendError(_process?.StandardError.ReadToEnd() ?? "");
+			if (!_needSendEvent) return;
+			if (_process?.ExitCode != 0)
+				_client.SendError(_process?.StandardError.ReadToEnd() ?? "");
 
-				_client?.SendEvent(new TerminatedEvent());
-			}
+			_client?.SendEvent(new TerminatedEvent());
 		}
 
-		public void Stop()
+		private void Stop()
 		{
 			_needSendEvent = false;
 			_process?.Kill();
 		}
 
-		protected virtual void Dispose(bool disposing)
+		private void Dispose(bool disposing)
 		{
-			if (!disposedValue)
+			if (_disposedValue) return;
+			if (disposing)
 			{
-				if (disposing)
-				{
-					// TODO: освободить управляемое состояние (управляемые объекты)
-				}
-
-				Stop();
-				disposedValue = true;
+				// TODO: освободить управляемое состояние (управляемые объекты)
 			}
+
+			Stop();
+			_disposedValue = true;
 		}
 
 		~DebugServerProcess()

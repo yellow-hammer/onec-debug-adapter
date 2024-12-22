@@ -107,17 +107,23 @@ namespace Onec.DebugAdapter.Services
 
                 if (versionFolders.Count == 0)
                     throw new System.Exception("Не найдены установленные версии платформы");
+                
+                var binFolder = Environment.OSVersion.Platform switch
+                {
+                    PlatformID.Win32NT => "bin",
+                    _ => ""
+                };
 
                 var platformVersion = arguments.GetValueAsString("platformVersion") ?? string.Empty;
                 if (string.IsNullOrEmpty(platformVersion) || platformVersion.ToUpper() == "LATEST")
-                    PlatformBin = Path.Combine(versionFolders.First().PlatformPath, "bin");
+                    PlatformBin = Path.Combine(versionFolders.First().PlatformPath, binFolder);
                 else
                 {
                     var versionItem = versionFolders.FirstOrDefault(c => c.Name == platformVersion);
                     if (versionItem == null)
-                        throw new System.Exception($"Указанная версия платформы ({platformVersion}) не найдена");
-                    else
-                        PlatformBin = Path.Combine(versionItem.PlatformPath, "bin");
+                        throw new System.Exception($"Указанная версия платформы ({platformVersion}) не найдена"); 
+                    
+                    PlatformBin = Path.Combine(versionItem.PlatformPath, binFolder);
                 }
             }
         }
