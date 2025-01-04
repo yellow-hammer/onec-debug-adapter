@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading.Tasks.Dataflow;
 using System.Xml;
+using Microsoft.Extensions.Logging;
 
 namespace Onec.DebugAdapter
 {
@@ -19,6 +20,7 @@ namespace Onec.DebugAdapter
         {
             var host = new HostBuilder()
                 .ConfigureDefaults(args)
+                .ConfigureLogging(builder => builder.ClearProviders())
                 .ConfigureServices((context, sc) =>
                 {
                     sc.AddTransient<IDebugServerClient, DebugServerClient>();
