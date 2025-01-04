@@ -73,18 +73,18 @@ namespace Onec.DebugAdapter.Services
 
             _moduleSetBreakpointsArguments.Select(c => c.Value).ToList().ForEach(cArgs =>
             {
-                var (Extension, ObjectId, PropertyId) = _metadataProvider.ModuleInfoByPath(cArgs.Source.Path.CapitalizeFirstChar());
+                var (extension, objectId, propertyId) = _metadataProvider.ModuleInfoByPath(cArgs.Source.Path.CapitalizeFirstChar());
 
                 var moduleInfo = new ModuleBpInfoInternal()
                 {
                     Id = new BslModuleIdInternal()
                     {
-                        ExtensionName = Extension,
-                        ObjectId = ObjectId,
-                        PropertyId = PropertyId
+                        ExtensionName = extension,
+                        ObjectId = objectId,
+                        PropertyId = propertyId
                     }
                 };
-                if (!string.IsNullOrEmpty(Extension))
+                if (!string.IsNullOrEmpty(extension))
                     moduleInfo.Id.Type = BslModuleType.ExtensionModule;
 
                 cArgs.Breakpoints.ForEach(bp =>
@@ -105,7 +105,7 @@ namespace Onec.DebugAdapter.Services
 
                 request.BpWorkspace.Add(moduleInfo);
 
-                if (requestedModule == (Extension, ObjectId, PropertyId))
+                if (requestedModule == (extension, objectId, propertyId))
                 {
                     debuggerResponse.Breakpoints = moduleInfo.BpInfo.Select(c => new Breakpoint()
                     {

@@ -2,11 +2,6 @@
 using Onec.DebugAdapter.DebugServer;
 using Onec.DebugAdapter.Extensions;
 using Onec.DebugAdapter.Services;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Onec.DebugAdapter.DebugProtocol
 {

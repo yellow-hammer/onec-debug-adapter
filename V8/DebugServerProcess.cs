@@ -23,8 +23,7 @@ namespace Onec.DebugAdapter.V8
 		public async Task Run(DebugProtocolClient client)
 		{
 			_client = client;
-
-
+			
 			var notifyFilePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 
 			var arguments = new[]
@@ -50,6 +49,7 @@ namespace Onec.DebugAdapter.V8
 			{
 				StartInfo = new ProcessStartInfo(exePath, string.Join(" ", arguments))
 				{
+					RedirectStandardOutput = true,
 					RedirectStandardError = true
 				},
 				EnableRaisingEvents = true,

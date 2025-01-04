@@ -1,8 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
-using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
-using Onec.DebugAdapter.Services;
+﻿using Onec.DebugAdapter.Services;
 using RestSharp;
-using System.Net.Http.Headers;
 
 namespace Onec.DebugAdapter.DebugServer
 {
@@ -10,16 +7,13 @@ namespace Onec.DebugAdapter.DebugServer
     {
 		private readonly TaskCompletionSource _tcs = new();
 
-		private readonly IDebugConfiguration _configuration;
-        private RestClient _client = null!;
+		private RestClient _client = null!;
 
         public DebugServerClient(IDebugConfiguration configuration)
         {
-            _configuration = configuration;
-
-            _configuration.Initialization.ContinueWith(c =>
+	        configuration.Initialization.ContinueWith(c =>
             {
-				var options = new RestClientOptions($"http://{_configuration.DebugServerHost}:{_configuration.DebugServerPort}/e1crdbg")
+				var options = new RestClientOptions($"http://{configuration.DebugServerHost}:{configuration.DebugServerPort}/e1crdbg")
 				{
 					ThrowOnAnyError = true,
 					UserAgent = "1CV8"

@@ -111,10 +111,8 @@ namespace Onec.DebugAdapter.Services
 
             var response = await _debugServerClient.AttachDetachDbgTargets(request, _cancellation);
 
-            foreach (var debugTarget in debugTargets)
+            foreach (var threadId in debugTargets.Select(AddThreadId))
             {
-                var threadId = AddThreadId(debugTarget);
-
                 _client.SendEvent(new ThreadEvent()
                 {
                     Reason = ThreadEvent.ReasonValue.Started,

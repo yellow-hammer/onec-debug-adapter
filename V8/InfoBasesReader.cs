@@ -28,7 +28,7 @@ namespace Onec.DebugAdapter.V8
             if (File.Exists(iBasesPath))
             {
                 var content = await File.ReadAllTextAsync(iBasesPath);
-                var infoBasesParams = Regex.Split(content, "(?=\\[.*\\])").Where(c => !string.IsNullOrEmpty(c.Trim())).ToList();
+                var infoBasesParams = Regex.Split(content, @"(?=\[.*\])").Where(c => !string.IsNullOrEmpty(c.Trim())).ToList();
                 infoBasesParams.ForEach(infoBaseParams =>
                 {
                     var lines = Regex.Split(infoBaseParams, "\r?\n").Where(c => !string.IsNullOrEmpty(c.Trim())).ToArray();

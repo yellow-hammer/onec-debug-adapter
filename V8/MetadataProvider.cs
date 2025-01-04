@@ -1,15 +1,8 @@
-﻿using Microsoft.Extensions.Configuration;
-using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
+﻿using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
 using Onec.DebugAdapter.Services;
 using System.Xml;
-using System.Xml.Linq;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection.PortableExecutable;
 using System.Threading.Tasks.Dataflow;
-using System.Linq.Expressions;
 using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 
 namespace Onec.DebugAdapter.V8
