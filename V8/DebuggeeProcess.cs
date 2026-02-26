@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using Onec.DebugAdapter.Extensions;
@@ -31,9 +31,10 @@ namespace Onec.DebugAdapter.V8
         {
             _client = client;
 
+            var connectionString = _configuration.InfoBase.Connect ?? "";
             var arguments = new[]
             {
-                $"/IBNAME \"{_configuration.InfoBase.Name}\"",
+                connectionString.Contains(' ') ? $"\"{connectionString}\"" : connectionString,
                 "/TCOMP -SDC",
                 "/DisableStartupMessages",
                 "/DisplayPerformance",

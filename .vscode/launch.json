@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // Используйте IntelliSense, чтобы узнать, какие атрибуты существуют для отладки C#.
+            // Используйте наведение для описания существующих атрибутов
+            // Для получения дополнительных сведений посетите https://github.com/dotnet/vscode-csharp/blob/main/debugger-launchjson.md
+            "name": ".NET Core Launch (console)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            // Если вы изменили требуемые версии .NET Framework, обязательно обновите путь к программе.
+            "program": "${workspaceFolder}/bin/Debug/net6.0/OnecDebugAdapter.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            // Дополнительные сведения о поле \"console\" см. в https://aka.ms/VSCode-CS-LaunchJson-Console
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": ".NET Core Attach",
+            "type": "coreclr",
+            "request": "attach"
+        }
+    ]
+}

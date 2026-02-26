@@ -1,4 +1,4 @@
-﻿using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Utilities;
+using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Utilities;
 using Newtonsoft.Json.Linq;
 using Onec.DebugAdapter.DebugServer;
 using Onec.DebugAdapter.Extensions;
@@ -59,35 +59,36 @@ namespace Onec.DebugAdapter.Services
 				_tcs.SetResult();
 		}
 
-		private async Task InitInfoBase(Dictionary<string, JToken> arguments)
+		private Task InitInfoBase(Dictionary<string, JToken> arguments)
         {
-            var infoBase = arguments.GetValueAsString("infoBase") ?? "";
-            if (string.IsNullOrEmpty(infoBase))
-                throw new System.Exception("Не задано наименование информационной базы");
+            var connectionString = arguments.GetValueAsString("connectionString") ?? "";
+            if (string.IsNullOrWhiteSpace(connectionString))
+                throw new System.Exception("Не задана строка подключения к информационной базе (ожидается из env.json: default['--ibconnection'])");
 
-            var infoBases = await InfoBasesReader.Read();
-            var infobaseItem = infoBases.FirstOrDefault(c => c.Name == infoBase) 
-                ?? throw new System.Exception($"Информационная база \"{infoBase}\" не найдена в списке баз");
+            connectionString = connectionString.Trim();
+            if (!connectionString.StartsWith("/F", StringComparison.OrdinalIgnoreCase) && !connectionString.StartsWith("/S", StringComparison.OrdinalIgnoreCase))
+                throw new System.Exception($"Строка подключения должна начинаться с /F (файловая ИБ) или /S (серверная ИБ): {connectionString}");
 
-			InfoBase = infobaseItem;
-
-            var connectionString = infobaseItem.Connect;
-            if (string.IsNullOrEmpty(connectionString))
-                throw new System.Exception($"Не удалось определить строку подключения к информационной базе");
-
-            if (connectionString.StartsWith("File=", StringComparison.OrdinalIgnoreCase))
+            var properties = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["Connect"] = connectionString };
+            string name;
+            if (connectionString.StartsWith("/F", StringComparison.OrdinalIgnoreCase))
             {
                 IsFileInfoBase = true;
-				InfoBaseName = "DefAlias";
-			}
+                InfoBaseName = "DefAlias";
+                name = "DefAlias";
+            }
             else
             {
-				var reference = Regex.Match(connectionString, "(?<=Ref=\").*?(?=\")", RegexOptions.ExplicitCapture).Value;
-				if (string.IsNullOrEmpty(reference))
-					throw new System.Exception($"Не удалось определить имя информационной базы по строке подключения {connectionString}");
+                var afterSlash = connectionString.Length > 2 ? connectionString.Substring(2) : "";
+                var lastBackslash = afterSlash.LastIndexOf('\\');
+                InfoBaseName = lastBackslash >= 0 && lastBackslash < afterSlash.Length - 1
+                    ? afterSlash.Substring(lastBackslash + 1)
+                    : (string.IsNullOrEmpty(afterSlash) ? "ServerBase" : afterSlash);
+                name = InfoBaseName;
+            }
 
-				InfoBaseName = reference;
-			}
+            InfoBase = new InfoBaseItem(name, properties);
+            return Task.CompletedTask;
         }
 
         private void InitPlatformBin(Dictionary<string, JToken> arguments)

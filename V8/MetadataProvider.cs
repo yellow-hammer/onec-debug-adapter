@@ -1,8 +1,9 @@
-﻿using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
+using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
 using Onec.DebugAdapter.Services;
+using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Xml;
 using System.Threading.Tasks.Dataflow;
-using System.Collections.Concurrent;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 
 namespace Onec.DebugAdapter.V8
@@ -10,7 +11,7 @@ namespace Onec.DebugAdapter.V8
     public class MetadataProvider : IMetadataProvider
     {
         private readonly IDebugConfiguration _configuration;
-        private readonly ConcurrentDictionary<string, (string Extension, string ObjectId, string PropertyId)> _modulesInfoByPath = new();
+        private readonly ConcurrentDictionary<string, (string Extension, string ObjectId, string PropertyId)> _modulesInfoByPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), string> _pathsByModuleInfo = new();
 
         public MetadataProvider(IDebugConfiguration debugConfiguration)
@@ -28,11 +29,34 @@ namespace Onec.DebugAdapter.V8
 			client.SendEvent(new ProgressEndEvent(id));
 		}
 
+        private static string NormalizePath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return path;
+            try
+            {
+                return Path.GetFullPath(path.Trim());
+            }
+            catch
+            {
+                return path.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+            }
+        }
+
         public string ModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default)
-            => _pathsByModuleInfo[(extension, objectId, propertyId)];
+        {
+            var key = (extension, objectId, propertyId);
+            if (_pathsByModuleInfo.TryGetValue(key, out var path))
+                return path;
+            throw new KeyNotFoundException($"Модуль не найден в кэше метаданных: Extension={extension}, ObjectId={objectId}, PropertyId={propertyId}.");
+        }
 
         public (string Extension, string ObjectId, string PropertyId) ModuleInfoByPath(string path, CancellationToken cancellationToken = default)
-            => _modulesInfoByPath[path];
+        {
+            var normalized = NormalizePath(path);
+            if (_modulesInfoByPath.TryGetValue(normalized, out var info))
+                return info;
+            throw new KeyNotFoundException($"Путь к модулю не найден в структуре конфигурации: {path}. Убедитесь, что rootProject и extensions в launch.json указывают на выгрузку конфигурации, содержащую этот модуль.");
+        }
 
         private static string GetPropertyId(string mdType, string moduleName)
         {
@@ -176,8 +200,9 @@ namespace Onec.DebugAdapter.V8
 
         private void CacheModule(string path, string extension, string objectId, string propertyId)
         {
-            _modulesInfoByPath.TryAdd(path, (extension, objectId, propertyId));
-            _pathsByModuleInfo.TryAdd((extension, objectId, propertyId), path);
+            var normalizedPath = NormalizePath(path);
+            _modulesInfoByPath.TryAdd(normalizedPath, (extension, objectId, propertyId));
+            _pathsByModuleInfo.TryAdd((extension, objectId, propertyId), normalizedPath);
         }
     }
 }
