@@ -19,7 +19,7 @@ namespace Onec.DebugAdapter.Services
         private readonly TaskCompletionSource _tcs = new();
         public Task Initialization => _tcs.Task;
 
-        public InfoBaseItem InfoBase { get; private set; }
+        public InfoBaseItem InfoBase { get; private set; } = null!;
         public bool IsFileInfoBase { get; private set; } = false;
         public string InfoBaseName { get; private set; } = string.Empty;
         public string PlatformBin { get; private set; } = string.Empty;

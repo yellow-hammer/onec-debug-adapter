@@ -1,4 +1,4 @@
-﻿using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
+using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,6 +14,6 @@ namespace Onec.DebugAdapter.DebugProtocol
 
     internal class AttachDebugTargetArguments
     {
-        public string Id { get; set; }
+        public string Id { get; set; } = null!;
     }
 }
