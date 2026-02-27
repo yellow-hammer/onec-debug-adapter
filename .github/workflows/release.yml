@@ -1,0 +1,37 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish
+        run: dotnet publish onec-debug-adapter.csproj -c Release -o out/onec-debug-adapter
+
+      - name: Create archive
+        run: |
+          cd out
+          zip -r "onec-debug-adapter-${GITHUB_REF_NAME}.zip" "onec-debug-adapter"
+        shell: bash
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/onec-debug-adapter-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
