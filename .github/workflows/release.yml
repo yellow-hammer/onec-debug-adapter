@@ -4,14 +4,45 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия релиза (в формате v0.1.0)'
+        required: true
+        type: string
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve version and tag
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION_INPUT="${{ github.event.inputs.version }}"
+            if [[ "$VERSION_INPUT" != v* ]]; then
+              echo "ERROR: version must start with 'v', for example: v0.1.0"
+              exit 1
+            fi
+            TAG="$VERSION_INPUT"
+            VERSION="${TAG#v}"
+          else
+            # Пример: refs/tags/v0.1.0 → v0.1.0
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: ${TAG}"
+          echo "Resolved version: ${VERSION}"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -24,14 +55,15 @@ jobs:
       - name: Create archive
         run: |
           cd out
-          zip -r "onec-debug-adapter-${GITHUB_REF_NAME}.zip" "onec-debug-adapter"
+          zip -r "onec-debug-adapter-${{ steps.version.outputs.tag }}.zip" "onec-debug-adapter"
         shell: bash
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: |
-            out/onec-debug-adapter-${{ github.ref_name }}.zip
+            out/onec-debug-adapter-${{ steps.version.outputs.tag }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
