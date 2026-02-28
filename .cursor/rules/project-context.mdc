@@ -1,0 +1,38 @@
+---
+description: Контекст проекта onec-debug-adapter — DAP-адаптер для HTTP-сервера отладки 1С
+alwaysApply: true
+---
+
+# Контекст проекта
+
+**onec-debug-adapter** — DAP-адаптер (Debug Adapter Protocol) для HTTP-сервера отладки 1С:Предприятие. Позволяет отлаживать исходники конфигураций (формат конфигуратора) и расширений из VS Code. Основной потребитель — расширение **yellow-hammer/vscode-1c-platform-tools**; расширение при сборке загружает релиз адаптера и подкладывает его в VSIX.
+
+## Стек и требования
+
+- **Язык**: C#, .NET 8 (поддержка .NET 6 для сборки указана в csproj при необходимости).
+- **Сборка**: `dotnet publish onec-debug-adapter.csproj -c Release -o out/onec-debug-adapter`. Результат — каталог с `OnecDebugAdapter.dll` и зависимостями.
+- **Запуск**: процесс адаптера запускается клиентом (VS Code через расширение) через stdio или TCP; параметры отладки передаются по DAP (launch/attach), а не аргументами командной строки.
+
+## Архитектура
+
+- **Точка входа**: `Program.cs` — хост с DI; в зависимости от конфигурации регистрируется `ConsoleDebugAdapterService` (stdio) или `TcpDebugAdapterService` (отладка адаптера).
+- **Сервисы** (`Services/`): `V8DebugAdapter` — основной DAP-адаптер; `DebugConfiguration` — параметры конфигурации (rootProject, platformPath, platformVersion, debugServerHost/Port, extensions, autoAttachTypes и т.д.); `DebugTargetsManager`, `StoppingManager`; транспорт — `ConsoleDebugAdapterService` или `TcpDebugAdapterService`.
+- **Протокол 1С** (`DebugServer/`): клиент и слушатель HTTP-сервера отладки 1С (`DebugServerClient`, `DebugServerListener`), сериализация запросов (`RequestSerializer`), сообщения (`Messages`).
+- **DAP-расширения** (`DebugProtocol/`): кастомные запросы/события (attach target, debug targets, auto-attach types и т.д.) — `DebugAdapterExtender`, запросы вроде `AttachDebugTargetRequest`, `DebugTargetsRequest`, `SetAutoAttachTargetTypesRequest`, события `DebugTargetsUpdatedEvent`.
+- **V8** (`V8/`): `DebuggeeProcess`, `DebugServerProcess`, `MetadataProvider` — работа с процессами и метаданными платформы 1С.
+- **Вспомогательное**: `Extensions/` — расширения для строк, словарей, протокола и т.д.
+
+## Параметры конфигурации (DAP)
+
+Клиент передаёт в launch/attach: `rootProject`, `platformPath`, `platformVersion`, `debugServerHost`, `debugServerPort`, `extensions` (массив путей), `autoAttachTypes` и др. Чтение — через `IDebugConfiguration` / `DebugConfiguration`.
+
+## Релизы и интеграция с 1cpt
+
+- Релизы: тег `vX.Y.Z` → GitHub Actions собирает проект, упаковывает `out/onec-debug-adapter` в `onec-debug-adapter-vX.Y.Z.zip` и прикрепляет к GitHub Release.
+- Расширение vscode-1c-platform-tools при сборке (`npm run build:onec-adapter`) скачивает архив по тегу и раскладывает в `bin/onec-debug-adapter/` внутри VSIX.
+
+## Соглашения
+
+- Коммиты: [Conventional Commits](https://www.conventionalcommits.org/ru/v1.0.0/), сообщения на русском при необходимости.
+- Комментарии и сообщения пользователю: на русском.
+- При изменении DAP-контракта (запросы/события, параметры launch) проверить совместимость с расширением vscode-1c-platform-tools (запуск/attach и чтение конфигурации).
