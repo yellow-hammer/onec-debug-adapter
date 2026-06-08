@@ -11,6 +11,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -52,9 +56,22 @@ jobs:
       - name: Publish
         run: dotnet publish onec-debug-adapter.csproj -c Release -o out/onec-debug-adapter
 
+      - name: Verify adapter binary
+        shell: bash
+        run: |
+          # Расширение vscode-1c-platform-tools качает релиз и ищет OnecDebugAdapter.dll —
+          # без него asset бесполезен, поэтому падаем до публикации.
+          if [ ! -f out/onec-debug-adapter/OnecDebugAdapter.dll ]; then
+            echo "ERROR: out/onec-debug-adapter/OnecDebugAdapter.dll не найден после publish"
+            ls -la out/onec-debug-adapter
+            exit 1
+          fi
+
       - name: Create archive
         run: |
           cd out
+          # Архив с корневым каталогом onec-debug-adapter/ (внутри OnecDebugAdapter.dll).
+          # Имя asset'а onec-debug-adapter-<tag>.zip — под него настроен загрузчик расширения.
           zip -r "onec-debug-adapter-${{ steps.version.outputs.tag }}.zip" "onec-debug-adapter"
         shell: bash
 
@@ -62,6 +79,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          # Стабильный релиз: расширение тянет его через GitHub API releases/latest.
+          prerelease: false
+          make_latest: 'true'
           files: |
             out/onec-debug-adapter-${{ steps.version.outputs.tag }}.zip
         env:
