@@ -19,8 +19,11 @@ namespace Onec.DebugAdapter.V8
         private readonly ConcurrentDictionary<string, (string Extension, string ObjectId, string PropertyId)> _modulesInfoByRelPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), string> _relPathsByModuleInfo = new();
         private readonly ConcurrentDictionary<string, string> _clientRootsByExtension = new();
-        private readonly ConcurrentDictionary<string, string> _rootsByExtension = new();
         private volatile bool _clientUsesBackslash = Path.DirectorySeparatorChar == '\\';
+
+        // Модули внешних обработок/отчётов: при установке точек им нужны BslModuleType.ExtMdModule
+        // и URL собранного файла (.epf/.erf); пустой URL — собранный файл не найден.
+        private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), string> _externalModules = new();
 
         public MetadataProvider(IDebugConfiguration debugConfiguration)
         {
@@ -138,7 +141,7 @@ namespace Onec.DebugAdapter.V8
                 BoundedCapacity = DataflowBlockOptions.Unbounded
             };
 
-            var mdReaderBlock = new ActionBlock<(string Extension, string Path)>(args =>
+            var mdReaderBlock = new ActionBlock<(string Extension, string Path, string Root, string? ExternalUrl)>(args =>
             {
                 var mdName = Path.GetFileNameWithoutExtension(args.Path);
                 var mdPath = Path.Combine(Path.GetDirectoryName(args.Path)!, mdName);
@@ -155,7 +158,7 @@ namespace Onec.DebugAdapter.V8
                     foreach (var moduleFile in Directory.EnumerateFiles(extPath, "*.bsl", SearchOption.AllDirectories))
                     {
                         var propertyId = GetPropertyId(mdType, Path.GetFileNameWithoutExtension(moduleFile));
-                        CacheModule(moduleFile, args.Extension, objectId, propertyId);
+                        CacheModule(moduleFile, args.Extension, objectId, propertyId, args.Root, args.ExternalUrl);
                     }
 
                 var formsPath = Path.Combine(mdPath, "Forms");
@@ -169,7 +172,7 @@ namespace Onec.DebugAdapter.V8
                             if (formModuleFile != null)
                             {
                                 var propertyId = GetPropertyId(mdType, Path.GetFileNameWithoutExtension(formModuleFile));
-                                CacheModule(formModuleFile, args.Extension, GetObjectId(formXmlFile), propertyId);
+                                CacheModule(formModuleFile, args.Extension, GetObjectId(formXmlFile), propertyId, args.Root, args.ExternalUrl);
                             }
                         }
                     }
@@ -188,7 +191,7 @@ namespace Onec.DebugAdapter.V8
                             var commandModuleFile = Directory.EnumerateFiles(commandPath, "*.bsl", SearchOption.AllDirectories).FirstOrDefault();
                             if (commandModuleFile != null)
                                 // Захардкоженный идентификатор типа модуля формы
-                                CacheModule(commandModuleFile, args.Extension, commandObjectId, GetPropertyId("", Path.GetFileNameWithoutExtension(commandModuleFile)));
+                                CacheModule(commandModuleFile, args.Extension, commandObjectId, GetPropertyId("", Path.GetFileNameWithoutExtension(commandModuleFile)), args.Root, args.ExternalUrl);
                         }
                     }
                 }
@@ -207,7 +210,7 @@ namespace Onec.DebugAdapter.V8
                     foreach (var moduleFile in Directory.EnumerateFiles(extPath, "*.bsl"))
                     {
                         var propertyId = GetPropertyId("", Path.GetFileNameWithoutExtension(moduleFile));
-                        CacheModule(moduleFile, args.Extension, objectId, propertyId);
+                        CacheModule(moduleFile, args.Extension, objectId, propertyId, args.Path, null);
                     }
 
                 var rootMdfolders = Directory.GetDirectories(args.Path);
@@ -220,37 +223,61 @@ namespace Onec.DebugAdapter.V8
                     var xmlFiles = Directory.GetFiles(rootMdFolder, "*.xml");
 
                     foreach (var xmlFile in xmlFiles)
-                        await mdReaderBlock.SendAsync((args.Extension, xmlFile), cancellationToken).ConfigureAwait(false);
+                        await mdReaderBlock.SendAsync((args.Extension, xmlFile, args.Path, null), cancellationToken).ConfigureAwait(false);
                 }
             }, blockOptions);
 
             _ = rootReaderBlock.Completion.ContinueWith(delegate { mdReaderBlock.Complete(); }, cancellationToken).ConfigureAwait(false);
 
-            _rootsByExtension[string.Empty] = NormalizePath(_configuration.RootProject);
-            foreach (var kv in _configuration.Extensions)
-                _rootsByExtension[kv.Key] = NormalizePath(kv.Value);
-
             await rootReaderBlock.SendAsync((string.Empty, _configuration.RootProject));
             foreach(var kv in _configuration.Extensions)
                 await rootReaderBlock.SendAsync((kv.Key, kv.Value));
+
+            // Внешние обработки/отчёты: каталог артефакта содержит <Имя>.xml той же структуры,
+            // что и объект конфигурации, — обрабатывается тем же конвейером. URL собранного файла
+            // обязателен для точек останова (сервер адресует внешние модули по нему).
+            foreach (var sourceDir in _configuration.ExternalSources)
+            {
+                var artifactName = Path.GetFileName(sourceDir.TrimEnd('\\', '/'));
+                var rootXml = Path.Combine(sourceDir, artifactName + ".xml");
+                if (!File.Exists(rootXml))
+                    rootXml = Directory.EnumerateFiles(sourceDir, "*.xml", SearchOption.TopDirectoryOnly).FirstOrDefault() ?? "";
+                if (rootXml.Length == 0)
+                    continue;
+
+                var buildFile = _configuration.ExternalBuildFile(artifactName);
+                var url = buildFile == null ? "" : "file://" + ToForwardSlashes(buildFile);
+                if (buildFile == null)
+                    Log.Debug($"внешний артефакт «{artifactName}»: собранный файл не найден (externalDataProcessorsBuilds/externalReportsBuilds) — точки в его модулях работать не будут");
+
+                await mdReaderBlock.SendAsync((string.Empty, rootXml, sourceDir, url), cancellationToken).ConfigureAwait(false);
+            }
 
             rootReaderBlock.Complete();
 
             await mdReaderBlock.Completion;
         }
 
-        private void CacheModule(string path, string extension, string objectId, string propertyId)
+        public bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info)
+            => _externalModules.ContainsKey(info);
+
+        public string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info)
+            => _externalModules.TryGetValue(info, out var url) ? url : string.Empty;
+
+        private void CacheModule(string path, string extension, string objectId, string propertyId, string root, string? externalUrl)
         {
             var normalizedPath = NormalizePath(path);
             var info = (extension, objectId, propertyId);
             _modulesInfoByPath.TryAdd(normalizedPath, info);
             _pathsByModuleInfo.TryAdd(info, normalizedPath);
+            if (externalUrl != null)
+                _externalModules.TryAdd(info, externalUrl);
 
             // Относительный индекс для кросс-ОС резолва: «<имя каталога корня>/<путь внутри выгрузки>».
-            if (_rootsByExtension.TryGetValue(extension, out var root)
-                && normalizedPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            var normalizedRoot = NormalizePath(root);
+            if (normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
             {
-                var relKey = Path.GetFileName(root) + "/" + ToForwardSlashes(normalizedPath[root.Length..].TrimStart('\\', '/'));
+                var relKey = Path.GetFileName(normalizedRoot) + "/" + ToForwardSlashes(normalizedPath[normalizedRoot.Length..].TrimStart('\\', '/'));
                 _modulesInfoByRelPath.TryAdd(relKey, info);
                 _relPathsByModuleInfo.TryAdd(info, relKey);
             }

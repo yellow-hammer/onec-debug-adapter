@@ -30,6 +30,45 @@ namespace Onec.DebugAdapter.Services
 
         private readonly Dictionary<string, string> _extensions = new();
         public IReadOnlyDictionary<string, string> Extensions => _extensions;
+
+        // Каталоги исходников внешних обработок/отчётов (по одному на артефакт).
+        private readonly List<string> _externalSources = new();
+        public IReadOnlyList<string> ExternalSources => _externalSources;
+
+        // Собранные .epf/.erf: имя артефакта → файл. Точкам останова во внешних модулях
+        // нужен URL файла — без него сервер отладки отвергает запрос.
+        private readonly Dictionary<string, string> _externalBuildFiles = new(StringComparer.OrdinalIgnoreCase);
+        public string? ExternalBuildFile(string artifactName)
+            => _externalBuildFiles.TryGetValue(artifactName, out var file) ? file : null;
+
+        private void InitExternalBuilds(Dictionary<string, JToken> arguments, string key, string fileExtension)
+        {
+            var dirs = arguments.GetValueAsStringArray(key);
+            if (dirs == null)
+                return;
+
+            foreach (var dir in dirs.Where(Directory.Exists))
+                foreach (var file in Directory.EnumerateFiles(dir, "*" + fileExtension))
+                    _externalBuildFiles.TryAdd(Path.GetFileNameWithoutExtension(file), Path.GetFullPath(file));
+        }
+
+        // Путь из конфигурации запуска может указывать и на каталог артефакта (содержит <Имя>.xml),
+        // и на корень с несколькими артефактами — раскладываем до каталогов артефактов.
+        private void InitExternalSources(Dictionary<string, JToken> arguments, string key)
+        {
+            var paths = arguments.GetValueAsStringArray(key);
+            if (paths == null)
+                return;
+
+            foreach (var path in paths.Where(Directory.Exists))
+            {
+                if (File.Exists(Path.Combine(path, Path.GetFileName(path.TrimEnd('\\', '/')) + ".xml")))
+                    _externalSources.Add(path);
+                else
+                    _externalSources.AddRange(Directory.EnumerateDirectories(path)
+                        .Where(dir => File.Exists(Path.Combine(dir, Path.GetFileName(dir) + ".xml"))));
+            }
+        }
         public DebugTargetType[] InitialTargetTypes { get; private set; } = System.Array.Empty<DebugTargetType>();
 
         // Границы адаптивного интервала опроса сервера отладки (PingDebugUI).
@@ -55,6 +94,11 @@ namespace Onec.DebugAdapter.Services
             DiagnosticLogging = arguments.GetValueAsBool("trace") ?? false;
             User = arguments.GetValueAsString("user");
             Password = arguments.GetValueAsString("password");
+
+            InitExternalSources(arguments, "externalDataProcessors");
+            InitExternalSources(arguments, "externalReports");
+            InitExternalBuilds(arguments, "externalDataProcessorsBuilds", ".epf");
+            InitExternalBuilds(arguments, "externalReportsBuilds", ".erf");
 
             DebugServerHost = arguments.GetValueAsString("debugServerHost");
             

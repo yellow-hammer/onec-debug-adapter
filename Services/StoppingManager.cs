@@ -121,8 +121,19 @@ namespace Onec.DebugAdapter.Services
                         PropertyId = propertyId
                     }
                 };
-                if (!string.IsNullOrEmpty(extension))
+                var includeInRequest = true;
+                if (_metadataProvider.IsExternalModule((extension, objectId, propertyId)))
+                {
+                    // Сервер адресует внешние модули по URL собранного файла; без него запрос
+                    // отвергается целиком (BadRequest) — такой модуль не отправляем вовсе.
+                    var url = _metadataProvider.ExternalModuleUrl((extension, objectId, propertyId));
+                    moduleInfo.Id.Type = BslModuleType.ExtMdModule;
+                    moduleInfo.Id.Url = url;
+                    includeInRequest = url.Length > 0;
+                }
+                else if (!string.IsNullOrEmpty(extension))
                     moduleInfo.Id.Type = BslModuleType.ExtensionModule;
+                Log.Debug($"точки: модуль type={moduleInfo.Id.Type} url=\"{moduleInfo.Id.Url}\" obj={objectId} prop={propertyId} строки=[{string.Join(",", cArgs.Breakpoints.Select(b => b.Line))}]{(includeInRequest ? "" : " — пропущен (нет собранного файла)")}");
 
                 cArgs.Breakpoints.ForEach(bp =>
                 {
@@ -140,7 +151,8 @@ namespace Onec.DebugAdapter.Services
                     });
                 });
 
-                request.BpWorkspace.Add(moduleInfo);
+                if (includeInRequest)
+                    request.BpWorkspace.Add(moduleInfo);
 
                 if (requestedModule == (extension, objectId, propertyId))
                 {
@@ -152,7 +164,7 @@ namespace Onec.DebugAdapter.Services
                         Id = ids[i],
                         Line = (int)(c.Line),
                         Source = args.Source,
-                        Verified = true
+                        Verified = includeInRequest
                     }).ToList();
                 }
             });
@@ -601,6 +613,7 @@ namespace Onec.DebugAdapter.Services
 
             var stopPoint = e.Info.CallStack.Reverse().First();
             var requestKey = GetModuleKey(stopPoint.ModuleId);
+            Log.Debug($"останов: модуль type={stopPoint.ModuleId.Type} url=\"{stopPoint.ModuleId.Url}\" obj={stopPoint.ModuleId.ObjectId} prop={stopPoint.ModuleId.PropertyId} строка={stopPoint.LineNo}");
 
             if (e.Info.CallStackSpecified)
             {

@@ -17,6 +17,8 @@ namespace Onec.DebugAdapter.Services
         int DebugServerPort { get; }
         string RootProject { get; }
         IReadOnlyDictionary<string, string> Extensions { get; }
+        IReadOnlyList<string> ExternalSources { get; }
+        string? ExternalBuildFile(string artifactName);
         DebugTargetType[] InitialTargetTypes { get; }
         int PollMinDelayMs { get; }
         int PollMaxDelayMs { get; }

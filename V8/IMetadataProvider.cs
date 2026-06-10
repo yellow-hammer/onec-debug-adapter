@@ -9,5 +9,9 @@ namespace Onec.DebugAdapter.V8
         string ModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default);
 
         (string Extension, string ObjectId, string PropertyId) ModuleInfoByPath(string path, CancellationToken cancellationToken = default);
+
+        bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info);
+
+        string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info);
     }
 }
