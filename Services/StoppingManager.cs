@@ -395,6 +395,60 @@ namespace Onec.DebugAdapter.Services
             return response;
         }
 
+        public async Task<SetVariableResponse> SetVariable(SetVariableArguments args)
+        {
+            var (threadId, frameId, containerPath, _) = _variableIdentifiers.Get(args.VariablesReference);
+
+            // Имя в панели содержит тип («Отказ (Булево)») — для пути нужен чистый идентификатор.
+            var name = args.Name;
+            var typeSuffix = name.LastIndexOf(" (", StringComparison.Ordinal);
+            if (typeSuffix > 0 && name.EndsWith(')'))
+                name = name[..typeSuffix];
+
+            // Путь к изменяемому значению: локальная переменная кадра, элемент коллекции или свойство.
+            var itemPath = new List<SourceCalculationDataItem>(containerPath);
+            if (itemPath.Count == 0)
+                itemPath.Add(new() { Expression = name, ItemType = SourceCalculationDataItemType.Expression });
+            else if (int.TryParse(name, out var index))
+                itemPath.Add(new() { Index = index, IndexSpecified = true, ItemType = SourceCalculationDataItemType.Index });
+            else
+                itemPath.Add(new() { Property = name, ItemType = SourceCalculationDataItemType.Property });
+
+            var srcCalcInfo = new SourceCalculationDataInfo() { ExpressionResultId = Guid.NewGuid().ToString() };
+            itemPath.ForEach(c => srcCalcInfo.CalcItem.Add(c));
+
+            var request = _configuration.CreateRequest<RdbgModifyValueRequest>();
+            request.TargetId = _targetsManager.GetTargetId(threadId).ToLight();
+            request.ModifyDataPath = new CalculationSourceDataStorage()
+            {
+                StackLevel = frameId > 0 ? frameId : 0,
+                SrcCalcInfo = srcCalcInfo,
+                PresOptions = new DbgPresentationOptionsOfStringValue() { MaxTextSize = 307200 }
+            };
+            // Новое значение — выражение 1С: покрывает и литералы, и конструкторы значений.
+            request.NewValueInfo = new NewValueInfo()
+            {
+                Variant = NewValueVariant.Expr,
+                ValueExpression = args.Value
+            };
+
+            Log.Debug($"setVariable: {name} ← {args.Value}");
+            await _debugServerClient.ModifyValue(request, _cancellation);
+
+            // Фактическое значение перечитываем с сервера — оно и уходит в панель «Переменные».
+            var result = (await Eval(threadId, frameId, itemPath, ViewInterface.Context)).FirstOrDefault();
+            if (result == null)
+                return new SetVariableResponse() { Value = args.Value };
+            if (result.ErrorOccurred)
+                throw new InvalidOperationException(result.ExceptionStr.GetUTF8String());
+
+            return new SetVariableResponse()
+            {
+                Value = result.ResultValueInfo.Pres.GetUTF8String(),
+                Type = result.ResultValueInfo.TypeName
+            };
+        }
+
         /// <summary>
         /// Транслирует DAP-сообщение logpoint (`текст {выражение}`) в выражение 1С:
         /// литералы — строковые константы, вставки — конкатенация с приведением к строке.

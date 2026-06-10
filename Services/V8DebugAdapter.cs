@@ -79,6 +79,7 @@ namespace Onec.DebugAdapter.Services
                 SupportsExceptionFilterOptions = true,
                 SupportsConditionalBreakpoints = true,
                 SupportsLogPoints = true,
+                SupportsSetVariable = true,
                 SupportsSingleThreadExecutionRequests = true,
                 ExceptionBreakpointFilters = new()
                 {
@@ -193,6 +194,19 @@ namespace Onec.DebugAdapter.Services
             catch (Exception ex)
             {
                 SetProtocolError(responder, $"Ошибка при получении переменных", ex);
+            }
+        }
+
+        protected override async void HandleSetVariableRequestAsync(IRequestResponder<SetVariableArguments, SetVariableResponse> responder)
+        {
+            try
+            {
+                responder.SetResponse(await _stoppingManager.SetVariable(responder.Arguments));
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                SetProtocolError(responder, $"Ошибка при изменении значения переменной: {ex.Message}", ex);
             }
         }
 

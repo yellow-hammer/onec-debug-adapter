@@ -8,6 +8,7 @@
         Task<RdbgDetachDebugUiResponse?> DetachDebugUI(RdbgDetachDebugUiRequest request, CancellationToken cancellationToken = default);
         Task<RdbgEvalLocalVariablesResponse?> EvalLocalVariables(RdbgEvalLocalVariablesRequest request, CancellationToken cancellationToken = default);
         Task<RdbgEvalExprResponse?> EvalExpr(RdbgEvalExprRequest request, CancellationToken cancellationToken = default);
+        Task ModifyValue(RdbgModifyValueRequest request, CancellationToken cancellationToken = default);
         Task<RdbgGetCallStackResponse?> GetCallStack(RdbgGetCallStackRequest request, CancellationToken cancellationToken = default);
         Task<RdbgsGetDbgTargetsResponse?> GetDbgTargets(RdbgsGetDbgTargetsRequest request, CancellationToken cancellationToken = default);
         Task InitSettings(RdbgSetInitialDebugSettingsRequest request, CancellationToken cancellationToken = default);

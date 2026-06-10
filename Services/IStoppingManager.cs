@@ -13,5 +13,6 @@ namespace Onec.DebugAdapter.Services
         ScopesResponse GetScopes(ScopesArguments args);
         Task<VariablesResponse> GetVariables(VariablesArguments args);
         Task<EvaluateResponse> Evaluate(EvaluateArguments args);
+        Task<SetVariableResponse> SetVariable(SetVariableArguments args);
     }
 }

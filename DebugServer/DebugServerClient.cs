@@ -184,6 +184,17 @@ namespace Onec.DebugAdapter.DebugServer
             return await _client.PostAsync<RdbgEvalExprResponse>(restRequest, cancellationToken);
         }
 
+        public async Task ModifyValue(RdbgModifyValueRequest request, CancellationToken cancellationToken = default)
+        {
+			await WaitInitialized();
+
+			var restRequest = new RestRequest("rdbg");
+            restRequest.AddQueryParameter("cmd", "modifyValue");
+            restRequest.AddXmlBody(request);
+
+            await _client.PostAsync(restRequest, cancellationToken);
+        }
+
         public async Task<RdbgStepResponse?> Step(RdbgStepRequest request, CancellationToken cancellationToken = default)
         {
 			await WaitInitialized();
