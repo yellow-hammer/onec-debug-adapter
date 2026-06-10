@@ -32,16 +32,17 @@ namespace Onec.DebugAdapter
                 .ConfigureLogging(builder => builder.ClearProviders())
                 .ConfigureServices((context, sc) =>
                 {
+                    // Scoped: в persistent-режиме каждая сессия получает свой граф сервисов.
                     sc.AddTransient<IDebugServerClient, DebugServerClient>();
-                    sc.AddSingleton<IDebugConfiguration, DebugConfiguration>();
-                    sc.AddSingleton<IMetadataProvider, MetadataProvider>();
-                    sc.AddSingleton<IDebugServerListener, DebugServerListener>();
-                    sc.AddSingleton<IDebugTargetsManager, DebugTargetsManager>();
-                    sc.AddSingleton<IStoppingManager, StoppingManager>();
-					sc.AddSingleton<DebuggeeProcess>();
-					sc.AddSingleton<DebugServerProcess>();
-					sc.AddSingleton<V8DebugAdapter>();
-                    sc.AddSingleton<IDebugAdapterExtender, DebugAdapterExtender>();
+                    sc.AddScoped<IDebugConfiguration, DebugConfiguration>();
+                    sc.AddScoped<IMetadataProvider, MetadataProvider>();
+                    sc.AddScoped<IDebugServerListener, DebugServerListener>();
+                    sc.AddScoped<IDebugTargetsManager, DebugTargetsManager>();
+                    sc.AddScoped<IStoppingManager, StoppingManager>();
+					sc.AddScoped<DebuggeeProcess>();
+					sc.AddScoped<DebugServerProcess>();
+					sc.AddScoped<V8DebugAdapter>();
+                    sc.AddScoped<IDebugAdapterExtender, DebugAdapterExtender>();
 
                     if (context.Configuration.GetValue("debug", false))
                         sc.AddHostedService<TcpDebugAdapterService>();
