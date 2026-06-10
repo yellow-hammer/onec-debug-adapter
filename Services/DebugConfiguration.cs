@@ -32,12 +32,19 @@ namespace Onec.DebugAdapter.Services
         public IReadOnlyDictionary<string, string> Extensions => _extensions;
         public DebugTargetType[] InitialTargetTypes { get; private set; } = System.Array.Empty<DebugTargetType>();
 
+        // Границы адаптивного интервала опроса сервера отладки (PingDebugUI).
+        public int PollMinDelayMs { get; private set; } = 25;
+        public int PollMaxDelayMs { get; private set; } = 200;
+
         public async Task Init(Dictionary<string, JToken> arguments)
         {
             await InitInfoBase(arguments);
             InitPlatformBin(arguments);
             InitExtension(arguments);
             InitInitialTargetTypes(arguments);
+
+            PollMinDelayMs = Math.Max(1, arguments.GetValueAsInt("debugPollMinDelayMs") ?? 25);
+            PollMaxDelayMs = Math.Max(PollMinDelayMs, arguments.GetValueAsInt("debugPollMaxDelayMs") ?? 200);
 
             DebugServerHost = arguments.GetValueAsString("debugServerHost");
             

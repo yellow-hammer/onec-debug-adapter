@@ -12,6 +12,7 @@ namespace Onec.DebugAdapter.DebugServer
     public class DebugServerListener : IDebugServerListener
     {
         private CancellationToken _cancellation;
+        private volatile bool _stopped;
 
         private readonly IDebugServerClient _debugServerClient;
         private readonly IDebugConfiguration _debugConfiguration;
@@ -21,6 +22,7 @@ namespace Onec.DebugAdapter.DebugServer
         public event EventHandler<CallStackFormedEventArgs>? CallStackFormed;
         public event EventHandler<ExpressionEvaluatedEventArgs>? ExpressionEvaluated;
         public event EventHandler<RuntimeExceptionArgs>? RuntimeException;
+        public event EventHandler<CorrectedBreakpointsArgs>? CorrectedBreakpoints;
         public event EventHandler<SetForegroundHelperArgs>? SetForegroundHelper;
         public event EventHandler<ForegroundHelperRequestArgs>? ForegroundHelperRequested;
         public event EventHandler<ProcessForegroundHelperArgs>? ProcessForegroundHelper;
@@ -32,20 +34,31 @@ namespace Onec.DebugAdapter.DebugServer
             _debugServerClient = debugServerClient;
         }
 
+        // Остановка опроса при завершении сессии: отсоединённый debug UI отвечает только BadRequest.
+        public void Stop() => _stopped = true;
+
         public void Run(DebugProtocolClient debugProtocolClient, CancellationToken cancellationToken)
         {
             _debugProtocolClient = debugProtocolClient;
             _cancellation = cancellationToken;
 
+            var minDelay = _debugConfiguration.PollMinDelayMs;
+            var maxDelay = _debugConfiguration.PollMaxDelayMs;
+            var delay = minDelay;
+
             Task.Run(async () =>
             {
-                while (!_cancellation.IsCancellationRequested)
+                while (!_cancellation.IsCancellationRequested && !_stopped)
                 {
                     try
                     {
                         var response = await _debugServerClient.PingDebugUiParams(_debugConfiguration.DebuggerID, cancellationToken);
+                        var commands = response?.Result ?? new();
 
-                        foreach (var extCommand in response?.Result ?? new())
+                        // Адаптивный бэкофф: пришли команды — опрашиваем часто, простаиваем — реже.
+                        delay = commands.Count > 0 ? minDelay : Math.Min(maxDelay, delay * 2);
+
+                        foreach (var extCommand in commands)
                         {
                             switch (extCommand.CmdId)
                             {
@@ -77,22 +90,32 @@ namespace Onec.DebugAdapter.DebugServer
                                     ShowMetadataObject?.Invoke(this, new ShowMetadataObjectArgs((extCommand as DbguiExtCmdShowMetadataObject)!));
                                     break;
                                 case DbguiExtCmds.CorrectedBp:
+                                    CorrectedBreakpoints?.Invoke(this, new CorrectedBreakpointsArgs((extCommand as DbguiExtCmdInfoCorrectedBp)!));
+                                    break;
                                 case DbguiExtCmds.RteOnBpConditionProcessing:
                                 case DbguiExtCmds.MeasureResultProcessing:
                                 case DbguiExtCmds.ValueModified:
                                 case DbguiExtCmds.ErrorViewInfo:
                                 case DbguiExtCmds.Unknown:
                                 default:
-                                    throw new NotImplementedException($"Получено неизвестное значение CmdID: {extCommand.CmdId}");
+                                    // Прочие команды сервера обработки не требуют; цикл опроса не прерываем.
+                                    break;
                             }
                         }
 
-                        await Task.Delay(25, cancellationToken);
+                        await Task.Delay(delay, cancellationToken);
                     }
                     catch (TaskCanceledException) { }
                     catch (System.Exception ex)
                     {
+                        // При остановке сессии ошибки опроса ожидаемы — выходим молча.
+                        if (_stopped || _cancellation.IsCancellationRequested)
+                            break;
+
                         _debugProtocolClient.SendError(ex);
+                        // Пауза, чтобы повторяющаяся ошибка не превращалась в плотный цикл.
+                        try { await Task.Delay(maxDelay, cancellationToken); }
+                        catch (TaskCanceledException) { break; }
                     }
                 }
             }, _cancellation).ConfigureAwait(false);

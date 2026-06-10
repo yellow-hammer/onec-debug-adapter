@@ -14,6 +14,8 @@ namespace Onec.DebugAdapter.DebugServer
 
     public record RuntimeExceptionArgs(DbguiExtCmdInfoRte Info);
 
+    public record CorrectedBreakpointsArgs(DbguiExtCmdInfoCorrectedBp Info);
+
     public record SetForegroundHelperArgs(DbguiExtCmdInfoForegroundHelperSet Info);
 
     public record ForegroundHelperRequestArgs(DbguiExtCmdInfoForegroundHelperRequest Info);

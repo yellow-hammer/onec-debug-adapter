@@ -289,6 +289,9 @@ namespace Onec.DebugAdapter.Services
 
         private async Task Disconnect()
         {
+            // Останавливаем опрос до detach: иначе листенер продолжит слать ошибки клиенту.
+            _debugServerListener.Stop();
+
             if (_attached)
                 await _debugServerClient.DetachDebugUI(_configuration.CreateRequest<RdbgDetachDebugUiRequest>());
 

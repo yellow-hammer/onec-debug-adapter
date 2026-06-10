@@ -18,6 +18,8 @@ namespace Onec.DebugAdapter.Services
         string RootProject { get; }
         IReadOnlyDictionary<string, string> Extensions { get; }
         DebugTargetType[] InitialTargetTypes { get; }
+        int PollMinDelayMs { get; }
+        int PollMaxDelayMs { get; }
 
         // Отладочный порт файловой информационной базы выбирается на лету, поэтому требуется инжект в конфигурацию отладки
         void SetDebugServerPort(int port);
