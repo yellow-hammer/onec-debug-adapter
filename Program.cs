@@ -18,6 +18,15 @@ namespace Onec.DebugAdapter
     {
         static async Task Main(string[] args)
         {
+            // Необработанные исключения (в т.ч. из async void) не должны ронять процесс адаптера.
+            TaskScheduler.UnobservedTaskException += (_, e) =>
+            {
+                Console.Error.WriteLine($"[onec-debug-adapter] незамеченное исключение задачи: {e.Exception.Message}");
+                e.SetObserved();
+            };
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+                Console.Error.WriteLine($"[onec-debug-adapter] необработанное исключение: {(e.ExceptionObject as System.Exception)?.Message}");
+
             var host = new HostBuilder()
                 .ConfigureDefaults(args)
                 .ConfigureLogging(builder => builder.ClearProviders())

@@ -36,6 +36,9 @@ namespace Onec.DebugAdapter.Services
         private readonly References<(int ThreadId, int FrameId, List<SourceCalculationDataItem> Path, ViewInterface Interface)> _variableIdentifiers = new();
 
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), SetBreakpointsArguments> _moduleSetBreakpointsArguments = new();
+        // Идентификаторы DAP-точек по модулю (в порядке BpInfo) — для адресного применения correctedBP.
+        private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), List<int>> _moduleBreakpointIds = new();
+        private int _nextBreakpointId = 1;
 
         public StoppingManager(
             IDebugConfiguration debugConfiguration,
@@ -59,6 +62,40 @@ namespace Onec.DebugAdapter.Services
             _listener.CallStackFormed += CallStackFormedHandler;
             _listener.RuntimeException += RuntimeExceptionHandler;
             _listener.ExpressionEvaluated += ExpressionEvaluatedHandler;
+            _listener.CorrectedBreakpoints += CorrectedBreakpointsHandler;
+        }
+
+        // Сервер скорректировал строки точек останова на исполняемые — двигаем маркеры в VS Code.
+        private void CorrectedBreakpointsHandler(object? sender, CorrectedBreakpointsArgs e)
+        {
+            foreach (var module in e.Info.BpWorkspace)
+            {
+                var key = GetModuleKey(module.Id);
+                if (!_moduleSetBreakpointsArguments.TryGetValue(key, out var args))
+                    continue;
+                if (!_moduleBreakpointIds.TryGetValue(key, out var ids))
+                    continue;
+                // Сопоставление по порядку; при несовпадении количества коррекцию не применяем.
+                if (module.BpInfo.Count != ids.Count)
+                    continue;
+
+                for (var i = 0; i < ids.Count; i++)
+                {
+                    var bp = module.BpInfo[i];
+                    _client.SendEvent(new BreakpointEvent()
+                    {
+                        Reason = BreakpointEvent.ReasonValue.Changed,
+                        Breakpoint = new Breakpoint()
+                        {
+                            Id = ids[i],
+                            Line = (int)bp.Line,
+                            Source = args!.Source,
+                            // IsActive=false — строка неисполняемая, маркер показываем неподтверждённым.
+                            Verified = bp.IsActive
+                        }
+                    });
+                }
+            }
         }
 
         public async Task<SetBreakpointsResponse> SetBreakpoints(SetBreakpointsArguments args)
@@ -107,8 +144,12 @@ namespace Onec.DebugAdapter.Services
 
                 if (requestedModule == (extension, objectId, propertyId))
                 {
-                    debuggerResponse.Breakpoints = moduleInfo.BpInfo.Select(c => new Breakpoint()
+                    var ids = moduleInfo.BpInfo.Select(_ => System.Threading.Interlocked.Increment(ref _nextBreakpointId)).ToList();
+                    _moduleBreakpointIds[(extension, objectId, propertyId)] = ids;
+
+                    debuggerResponse.Breakpoints = moduleInfo.BpInfo.Select((c, i) => new Breakpoint()
                     {
+                        Id = ids[i],
                         Line = (int)(c.Line),
                         Source = args.Source,
                         Verified = true
@@ -320,6 +361,10 @@ namespace Onec.DebugAdapter.Services
 
         public async Task<EvaluateResponse> Evaluate(EvaluateArguments args)
         {
+            // Вычисление в 1С возможно только в контексте кадра стека.
+            if (args.FrameId == null)
+                return new EvaluateResponse { Result = "Вычисление выражения доступно только при остановке на точке (в контексте кадра стека)." };
+
             var path = new List<SourceCalculationDataItem>()
             {
                 new()
@@ -432,6 +477,19 @@ namespace Onec.DebugAdapter.Services
         }
 
         private async void CallStackFormedHandler(object? sender, CallStackFormedEventArgs e)
+        {
+            // async void: незамеченное исключение уронило бы процесс адаптера.
+            try
+            {
+                await OnCallStackFormed(e);
+            }
+            catch (System.Exception ex)
+            {
+                _client.SendError(ex);
+            }
+        }
+
+        private async Task OnCallStackFormed(CallStackFormedEventArgs e)
         {
             var threadId = _targetsManager.GetThreadId(e.Info.TargetId);
 
