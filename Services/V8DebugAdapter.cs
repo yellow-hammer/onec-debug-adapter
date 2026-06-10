@@ -240,6 +240,8 @@ namespace Onec.DebugAdapter.Services
         private async Task InitLaunchAttach(IRequestResponder responder, Dictionary<string, JToken> configurationArgs, bool launch)
         {
             await _configuration.Init(configurationArgs);
+            Log.Init(Protocol, _configuration.DiagnosticLogging);
+            Log.Debug($"старт отладки ({(launch ? "launch" : "attach")}); файловая ИБ={_configuration.IsFileInfoBase}");
 
             if (_configuration.IsFileInfoBase)
                 await _debugServer.Run(Protocol);

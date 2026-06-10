@@ -36,6 +36,9 @@ namespace Onec.DebugAdapter.Services
         public int PollMinDelayMs { get; private set; } = 25;
         public int PollMaxDelayMs { get; private set; } = 200;
 
+        // Диагностический вывод адаптера (флаг trace конфигурации запуска).
+        public bool DiagnosticLogging { get; private set; }
+
         public async Task Init(Dictionary<string, JToken> arguments)
         {
             await InitInfoBase(arguments);
@@ -45,6 +48,7 @@ namespace Onec.DebugAdapter.Services
 
             PollMinDelayMs = Math.Max(1, arguments.GetValueAsInt("debugPollMinDelayMs") ?? 25);
             PollMaxDelayMs = Math.Max(PollMinDelayMs, arguments.GetValueAsInt("debugPollMaxDelayMs") ?? 200);
+            DiagnosticLogging = arguments.GetValueAsBool("trace") ?? false;
 
             DebugServerHost = arguments.GetValueAsString("debugServerHost");
             
