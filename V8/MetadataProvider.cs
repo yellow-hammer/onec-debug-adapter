@@ -14,6 +14,14 @@ namespace Onec.DebugAdapter.V8
         private readonly ConcurrentDictionary<string, (string Extension, string ObjectId, string PropertyId)> _modulesInfoByPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), string> _pathsByModuleInfo = new();
 
+        // Кросс-ОС отладка: модули дополнительно индексируются по пути относительно корня выгрузки,
+        // корень клиента определяется по первому совпавшему запросу точек останова.
+        private readonly ConcurrentDictionary<string, (string Extension, string ObjectId, string PropertyId)> _modulesInfoByRelPath = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), string> _relPathsByModuleInfo = new();
+        private readonly ConcurrentDictionary<string, string> _clientRootsByExtension = new();
+        private readonly ConcurrentDictionary<string, string> _rootsByExtension = new();
+        private volatile bool _clientUsesBackslash = Path.DirectorySeparatorChar == '\\';
+
         public MetadataProvider(IDebugConfiguration debugConfiguration)
         {
             _configuration = debugConfiguration;
@@ -42,9 +50,21 @@ namespace Onec.DebugAdapter.V8
             }
         }
 
+        private static string ToForwardSlashes(string path)
+            => path.Trim().Replace('\\', '/').TrimEnd('/');
+
         public string ModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default)
         {
             var key = (extension, objectId, propertyId);
+
+            // Известен корень клиента — путь возвращаем в его формате.
+            if (_clientRootsByExtension.TryGetValue(extension, out var clientRoot)
+                && _relPathsByModuleInfo.TryGetValue(key, out var rel))
+            {
+                var clientPath = clientRoot + "/" + rel[(rel.IndexOf('/') + 1)..];
+                return _clientUsesBackslash ? clientPath.Replace('/', '\\') : clientPath;
+            }
+
             if (_pathsByModuleInfo.TryGetValue(key, out var path))
                 return path;
             throw new KeyNotFoundException($"Модуль не найден в кэше метаданных: Extension={extension}, ObjectId={objectId}, PropertyId={propertyId}.");
@@ -55,6 +75,23 @@ namespace Onec.DebugAdapter.V8
             var normalized = NormalizePath(path);
             if (_modulesInfoByPath.TryGetValue(normalized, out var info))
                 return info;
+
+            // Абсолютный путь не совпал (другая ОС/машина) — резолв по относительному хвосту.
+            var forward = ToForwardSlashes(path);
+            foreach (var kv in _modulesInfoByRelPath)
+            {
+                if (!forward.EndsWith("/" + kv.Key, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var relWithoutRootName = kv.Key[(kv.Key.IndexOf('/') + 1)..];
+                var clientRoot = forward[..^(relWithoutRootName.Length + 1)];
+                _clientRootsByExtension[kv.Value.Extension] = clientRoot;
+                _clientUsesBackslash = path.Contains('\\');
+                _modulesInfoByPath.TryAdd(normalized, kv.Value);
+                Log.Debug($"кросс-ОС пути: «{path}» сопоставлен по хвосту «{kv.Key}»; корень клиента: «{clientRoot}»");
+                return kv.Value;
+            }
+
             throw new KeyNotFoundException($"Путь к модулю не найден в структуре конфигурации: {path}. Убедитесь, что rootProject и extensions в launch.json указывают на выгрузку конфигурации, содержащую этот модуль.");
         }
 
@@ -189,6 +226,10 @@ namespace Onec.DebugAdapter.V8
 
             _ = rootReaderBlock.Completion.ContinueWith(delegate { mdReaderBlock.Complete(); }, cancellationToken).ConfigureAwait(false);
 
+            _rootsByExtension[string.Empty] = NormalizePath(_configuration.RootProject);
+            foreach (var kv in _configuration.Extensions)
+                _rootsByExtension[kv.Key] = NormalizePath(kv.Value);
+
             await rootReaderBlock.SendAsync((string.Empty, _configuration.RootProject));
             foreach(var kv in _configuration.Extensions)
                 await rootReaderBlock.SendAsync((kv.Key, kv.Value));
@@ -201,8 +242,18 @@ namespace Onec.DebugAdapter.V8
         private void CacheModule(string path, string extension, string objectId, string propertyId)
         {
             var normalizedPath = NormalizePath(path);
-            _modulesInfoByPath.TryAdd(normalizedPath, (extension, objectId, propertyId));
-            _pathsByModuleInfo.TryAdd((extension, objectId, propertyId), normalizedPath);
+            var info = (extension, objectId, propertyId);
+            _modulesInfoByPath.TryAdd(normalizedPath, info);
+            _pathsByModuleInfo.TryAdd(info, normalizedPath);
+
+            // Относительный индекс для кросс-ОС резолва: «<имя каталога корня>/<путь внутри выгрузки>».
+            if (_rootsByExtension.TryGetValue(extension, out var root)
+                && normalizedPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                var relKey = Path.GetFileName(root) + "/" + ToForwardSlashes(normalizedPath[root.Length..].TrimStart('\\', '/'));
+                _modulesInfoByRelPath.TryAdd(relKey, info);
+                _relPathsByModuleInfo.TryAdd(info, relKey);
+            }
         }
     }
 }
