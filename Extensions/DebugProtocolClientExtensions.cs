@@ -25,10 +25,11 @@ namespace Onec.DebugAdapter.Extensions
 
         internal static void SendOutputEvent(this DebugProtocolClient client, string message, OutputEvent.CategoryValue category)
         {
+            // Каждое сообщение — отдельной строкой консоли (иначе подряд идущие logpoint сливаются в одну).
             client.SendEvent(new OutputEvent()
             {
                 Category = category,
-                Output = message
+                Output = message.EndsWith('\n') ? message : message + Environment.NewLine
             });
         }
     }

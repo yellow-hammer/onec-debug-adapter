@@ -132,7 +132,7 @@ namespace Onec.DebugAdapter.Services
                         HitCount = int.TryParse(bp.HitCondition, out var hit) ? hit : 1,
                         BreakOnHitCount = !string.IsNullOrEmpty(bp.HitCondition),
                         IsActive = true,
-                        PutExpressionResult = bp.LogMessage,
+                        PutExpressionResult = BuildLogExpression(bp.LogMessage),
                         ShowOutputMessage = !string.IsNullOrEmpty(bp.LogMessage),
                         ContinueExecution = !string.IsNullOrEmpty(bp.LogMessage),
                         Condition = bp.Condition ?? "",
@@ -393,6 +393,58 @@ namespace Onec.DebugAdapter.Services
             }
 
             return response;
+        }
+
+        /// <summary>
+        /// Транслирует DAP-сообщение logpoint (`текст {выражение}`) в выражение 1С:
+        /// литералы — строковые константы, вставки — конкатенация с приведением к строке.
+        /// </summary>
+        internal static string? BuildLogExpression(string? logMessage)
+        {
+            if (string.IsNullOrEmpty(logMessage))
+                return logMessage;
+
+            var parts = new List<string>();
+            var literal = new StringBuilder();
+            var i = 0;
+            while (i < logMessage.Length)
+            {
+                var open = logMessage.IndexOf('{', i);
+                if (open < 0)
+                {
+                    literal.Append(logMessage[i..]);
+                    break;
+                }
+                var close = logMessage.IndexOf('}', open + 1);
+                if (close < 0)
+                {
+                    literal.Append(logMessage[i..]);
+                    break;
+                }
+
+                literal.Append(logMessage[i..open]);
+                if (literal.Length > 0)
+                {
+                    parts.Add("\"" + literal.Replace("\"", "\"\"") + "\"");
+                    literal.Clear();
+                }
+
+                var expression = logMessage[(open + 1)..close].Trim();
+                if (expression.Length > 0)
+                    parts.Add("(" + expression + ")");
+
+                i = close + 1;
+            }
+            if (literal.Length > 0)
+                parts.Add("\"" + literal.Replace("\"", "\"\"") + "\"");
+
+            if (parts.Count == 0)
+                return "\"\"";
+            // Первый операнд — строка: тогда 1С приводит остальные операнды конкатенации к строке.
+            if (!parts[0].StartsWith('"'))
+                parts.Insert(0, "\"\"");
+
+            return string.Join(" + ", parts);
         }
 
         private async Task<List<CalculationResultBaseData>> EvalLocalVariables(int threadId, int frameId)
