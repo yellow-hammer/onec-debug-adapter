@@ -32,7 +32,7 @@ namespace Onec.DebugAdapter.V8
             _client = client;
 
             var connectionString = _configuration.InfoBase.Connect ?? "";
-            var arguments = new[]
+            var arguments = new List<string>
             {
                 connectionString.Contains(' ') ? $"\"{connectionString}\"" : connectionString,
                 "/TCOMP -SDC",
@@ -43,6 +43,15 @@ namespace Onec.DebugAdapter.V8
                 $"/DEBUGGERURL \"http://{_configuration.DebugServerHost}:{_configuration.DebugServerPort}\"",
                 "/O Normal"
             };
+
+            // Автовход: с учётными данными клиент стартует без окна аутентификации.
+            if (!string.IsNullOrEmpty(_configuration.User) || !string.IsNullOrEmpty(_configuration.Password))
+            {
+                arguments.Add("/WA-");
+                arguments.Add($"/N\"{_configuration.User}\"");
+                arguments.Add($"/P\"{_configuration.Password}\"");
+                Log.Debug($"автовход: пользователь=\"{_configuration.User}\", пароль={(string.IsNullOrEmpty(_configuration.Password) ? "(пусто)" : "***")}");
+            }
 
             var exePath = Path.Join(
                 _configuration.PlatformBin, 

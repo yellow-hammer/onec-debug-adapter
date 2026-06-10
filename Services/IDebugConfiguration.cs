@@ -21,6 +21,8 @@ namespace Onec.DebugAdapter.Services
         int PollMinDelayMs { get; }
         int PollMaxDelayMs { get; }
         bool DiagnosticLogging { get; }
+        string User { get; }
+        string Password { get; }
 
         // Отладочный порт файловой информационной базы выбирается на лету, поэтому требуется инжект в конфигурацию отладки
         void SetDebugServerPort(int port);

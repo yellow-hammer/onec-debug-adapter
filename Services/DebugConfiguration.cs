@@ -39,6 +39,10 @@ namespace Onec.DebugAdapter.Services
         // Диагностический вывод адаптера (флаг trace конфигурации запуска).
         public bool DiagnosticLogging { get; private set; }
 
+        // Учётные данные автовхода в ИБ; пусто — стандартное окно аутентификации.
+        public string User { get; private set; } = string.Empty;
+        public string Password { get; private set; } = string.Empty;
+
         public async Task Init(Dictionary<string, JToken> arguments)
         {
             await InitInfoBase(arguments);
@@ -49,6 +53,8 @@ namespace Onec.DebugAdapter.Services
             PollMinDelayMs = Math.Max(1, arguments.GetValueAsInt("debugPollMinDelayMs") ?? 25);
             PollMaxDelayMs = Math.Max(PollMinDelayMs, arguments.GetValueAsInt("debugPollMaxDelayMs") ?? 200);
             DiagnosticLogging = arguments.GetValueAsBool("trace") ?? false;
+            User = arguments.GetValueAsString("user");
+            Password = arguments.GetValueAsString("password");
 
             DebugServerHost = arguments.GetValueAsString("debugServerHost");
             
