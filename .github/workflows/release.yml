@@ -1,62 +1,154 @@
-name: Build and release
+# Публикует onec-debug-adapter-<тег>.zip (DAP-адаптер) в GitHub Release.
+# Запуск: пуш тега v* или вручную (workflow_dispatch) с вводом версии.
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Версия релиза (в формате v0.1.0)'
+        description: 'Версия релиза (например, v0.1.0 или v0.1.0-rc.1)'
         required: true
         type: string
+      draft:
+        description: 'Создать черновик релиза (не публикуется публично)'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Пометить релиз как предварительный (alpha/beta/rc)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-and-release:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: Checkout
+      - name: Получить код
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # нужно для git-cliff
 
-      - name: Resolve version and tag
-        id: version
+      - name: Определить версию (из тега или ввода)
+        id: ver
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION_INPUT="${{ github.event.inputs.version }}"
-            if [[ "$VERSION_INPUT" != v* ]]; then
-              echo "ERROR: version must start with 'v', for example: v0.1.0"
-              exit 1
-            fi
-            TAG="$VERSION_INPUT"
-            VERSION="${TAG#v}"
+            VERSION="${{ github.event.inputs.version }}"
+            VERSION=${VERSION#v}
           else
-            # Пример: refs/tags/v0.1.0 → v0.1.0
-            TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#v}"
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Версия: $VERSION"
+
+      - name: Создать и отправить тег, если его нет (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Тег $TAG уже существует — пропуск"
+          else
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
           fi
 
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Resolved tag: ${TAG}"
-          echo "Resolved version: ${VERSION}"
+      - name: Установить Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
-      - name: Setup .NET
+      - name: Кэшировать cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-git-cliff-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-cliff-
+
+      - name: Установить git-cliff
+        run: |
+          if ! command -v git-cliff &> /dev/null; then
+            cargo install git-cliff --locked
+          fi
+          git-cliff --version
+
+      - name: Сгенерировать CHANGELOG
+        id: changelog
+        run: |
+          git-cliff --config cliff.toml --output CHANGELOG.md
+
+          if [ -f CHANGELOG.md ]; then
+            # Извлекаем только последний релиз (первый ## [version] до следующего ##)
+            CHANGELOG=$(awk '
+              /^## \[/ {
+                if (found) exit
+                found = 1
+              }
+              found { print }
+            ' CHANGELOG.md)
+
+            # Удаляем пустые строки в конце
+            CHANGELOG=$(echo "$CHANGELOG" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
+
+            # Если changelog пустой или слишком короткий — fallback на историю коммитов
+            if [ -z "$CHANGELOG" ] || [ ${#CHANGELOG} -lt 20 ]; then
+              CHANGELOG="## Изменения\n\nСм. [историю коммитов](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.ref }})"
+            fi
+          else
+            CHANGELOG="## Изменения\n\nСм. [историю коммитов](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.ref }})"
+          fi
+
+          # Многострочный вывод в GitHub Actions
+          {
+            echo 'changelog<<EOF'
+            echo "$CHANGELOG"
+            echo EOF
+          } >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Закоммитить CHANGELOG
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git checkout main
+          if [ -f CHANGELOG.md ]; then
+            git add CHANGELOG.md
+            if git diff --staged --quiet; then
+              echo "CHANGELOG.md без изменений — коммит не нужен"
+            else
+              git commit -m "chore(deps): update changelog"
+              git push origin main
+            fi
+          fi
+        continue-on-error: true
+
+      - name: Установить .NET 8
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish
+      - name: Собрать адаптер (dotnet publish)
         run: dotnet publish onec-debug-adapter.csproj -c Release -o out/onec-debug-adapter
 
-      - name: Verify adapter binary
+      - name: Проверить бинарь адаптера
         shell: bash
         run: |
           # Расширение vscode-1c-platform-tools качает релиз и ищет OnecDebugAdapter.dll —
@@ -67,25 +159,28 @@ jobs:
             exit 1
           fi
 
-      - name: Create archive
+      - name: Создать архив
+        shell: bash
         run: |
           cd out
           # Архив с корневым каталогом onec-debug-adapter/ (внутри OnecDebugAdapter.dll).
           # Имя asset'а onec-debug-adapter-<tag>.zip — под него настроен загрузчик расширения.
-          zip -r "onec-debug-adapter-${{ steps.version.outputs.tag }}.zip" "onec-debug-adapter"
-        shell: bash
+          zip -r "onec-debug-adapter-${{ steps.ver.outputs.tag }}.zip" "onec-debug-adapter"
 
-      - name: Create GitHub release
+      - name: Создать GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
-          generate_release_notes: true
-          # Стабильный релиз: расширение тянет его через GitHub API releases/latest.
-          prerelease: false
-          make_latest: 'true'
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          body: |
+            ## Версия ${{ steps.ver.outputs.version }}
+
+            ${{ steps.changelog.outputs.changelog }}
           files: |
-            out/onec-debug-adapter-${{ steps.version.outputs.tag }}.zip
+            out/onec-debug-adapter-${{ steps.ver.outputs.tag }}.zip
+          draft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true' || false }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true' || false }}
+          # Стабильный релиз становится latest: расширение тянет его через releases/latest.
+          make_latest: ${{ (github.event.inputs.draft == 'true' || github.event.inputs.prerelease == 'true') && 'false' || 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
