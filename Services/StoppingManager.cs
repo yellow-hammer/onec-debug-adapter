@@ -389,6 +389,25 @@ namespace Onec.DebugAdapter.Services
 
             var response = new VariablesResponse();
 
+            // Сервер нередко отдаёт пустой список локальных переменных сразу после останова —
+            // повторяем с паузами, затем строим список по исходнику процедуры.
+            if (Path.Count == 0 && LocalsEmpty(result))
+            {
+                foreach (var delay in _configuration.VariablesRetryDelaysMs)
+                {
+                    await Task.Delay(delay, _cancellation);
+                    result = (await EvalLocalVariables(ThreadId, FrameId)).First();
+                    if (!LocalsEmpty(result))
+                        break;
+                }
+
+                if (LocalsEmpty(result))
+                {
+                    response.Variables = await VariablesFromSource(ThreadId, FrameId);
+                    return response;
+                }
+            }
+
             if (result.ErrorOccurred)
                 return response;
 
@@ -484,6 +503,55 @@ namespace Onec.DebugAdapter.Services
                     VariablesReference = itemReference
                 };
             }).ToList();
+        }
+
+        private static bool LocalsEmpty(CalculationResultBaseData result)
+            => result.ErrorOccurred
+               || result.CalculationResult == null
+               || result.CalculationResult.ValueOfContextPropInfo.Count == 0;
+
+        /// <summary>
+        /// Запасной список переменных по исходнику текущей процедуры (параметры, «Перем», присваивания):
+        /// каждое имя вычисляется отдельным запросом.
+        /// </summary>
+        private async Task<List<Variable>> VariablesFromSource(int threadId, int frameId)
+        {
+            var variables = new List<Variable>();
+            if (!_threadsCallStack.TryGetValue(threadId, out var frames) || frameId < 0 || frameId >= frames.Count)
+                return variables;
+
+            var frame = frames[frameId];
+            var modulePath = _metadataProvider.LocalModulePath((frame.ModuleId.ExtensionName ?? "", frame.ModuleId.ObjectId, frame.ModuleId.PropertyId));
+            if (modulePath == null)
+                return variables;
+
+            string content;
+            try { content = await File.ReadAllTextAsync(modulePath, _cancellation); }
+            catch { return variables; }
+
+            var names = BslModuleAnalyzer.VariableNamesAtLine(content, (int)frame.LineNo);
+            Log.Debug($"переменные из исходника: {names.Count} имён ({Path.GetFileName(modulePath)}:{frame.LineNo})");
+
+            foreach (var name in names.Take(40))
+            {
+                var path = new List<SourceCalculationDataItem>
+                {
+                    new() { Expression = name, ItemType = SourceCalculationDataItemType.Expression }
+                };
+                var item = (await Eval(threadId, frameId, path, ViewInterface.Context)).FirstOrDefault();
+                if (item == null || item.ErrorOccurred)
+                    continue;
+
+                variables.Add(new Variable()
+                {
+                    Name = name,
+                    Value = item.ResultValueInfo.Pres.GetUTF8String(),
+                    Type = item.ResultValueInfo.TypeName,
+                    VariablesReference = GetVariableReference(threadId, frameId, path, item.ResultValueInfo)
+                });
+            }
+
+            return variables;
         }
 
         public async Task<EvaluateResponse> Evaluate(EvaluateArguments args)
@@ -653,7 +721,7 @@ namespace Onec.DebugAdapter.Services
 
             var request = _configuration.CreateRequest<RdbgEvalLocalVariablesRequest>();
             request.TargetId = _targetsManager.GetTargetId(threadId).ToLight();
-            request.CalcWaitingTime = 100;
+            request.CalcWaitingTime = _configuration.CalcWaitingTimeMs;
             request.Expr.Add(calculationSource);
 
             var response = await _debugServerClient.EvalLocalVariables(request, _cancellation);
@@ -694,7 +762,7 @@ namespace Onec.DebugAdapter.Services
 
             var request = _configuration.CreateRequest<RdbgEvalExprRequest>();
             request.TargetId = _targetsManager.GetTargetId(threadId).ToLight();
-            request.CalcWaitingTime = 100;
+            request.CalcWaitingTime = _configuration.CalcWaitingTimeMs;
             request.Expr.Add(calculationSource);
 
             var response = await _debugServerClient.EvalExpr(request, _cancellation);

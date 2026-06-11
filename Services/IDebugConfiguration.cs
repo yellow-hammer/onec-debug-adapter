@@ -22,6 +22,8 @@ namespace Onec.DebugAdapter.Services
         DebugTargetType[] InitialTargetTypes { get; }
         int PollMinDelayMs { get; }
         int PollMaxDelayMs { get; }
+        int CalcWaitingTimeMs { get; }
+        IReadOnlyList<int> VariablesRetryDelaysMs { get; }
         bool DiagnosticLogging { get; }
         string User { get; }
         string Password { get; }

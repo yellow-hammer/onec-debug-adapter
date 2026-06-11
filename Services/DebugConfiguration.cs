@@ -41,6 +41,17 @@ namespace Onec.DebugAdapter.Services
         public string? ExternalBuildFile(string artifactName)
             => _externalBuildFiles.TryGetValue(artifactName, out var file) ? file : null;
 
+        private static List<int>? GetValueAsIntArray(Dictionary<string, JToken> arguments, string key)
+        {
+            if (!arguments.TryGetValue(key, out var token) || token is not JArray array)
+                return null;
+            var result = new List<int>();
+            foreach (var item in array)
+                if (item.Type is JTokenType.Integer or JTokenType.Float)
+                    result.Add(Math.Clamp((int)item, 0, 10000));
+            return result;
+        }
+
         private void InitExternalBuilds(Dictionary<string, JToken> arguments, string key, string fileExtension)
         {
             var dirs = arguments.GetValueAsStringArray(key);
@@ -75,6 +86,13 @@ namespace Onec.DebugAdapter.Services
         public int PollMinDelayMs { get; private set; } = 25;
         public int PollMaxDelayMs { get; private set; } = 200;
 
+        // Время ожидания результата вычислений сервером (calcWaitingTime RDBG) — на медленных
+        // серверах малое значение даёт пустые ответы evalExpr/evalLocalVariables.
+        public int CalcWaitingTimeMs { get; private set; } = 100;
+
+        // Паузы повторов при пустом ответе сервера на запрос локальных переменных.
+        public IReadOnlyList<int> VariablesRetryDelaysMs { get; private set; } = new[] { 50, 100, 150 };
+
         // Диагностический вывод адаптера (флаг trace конфигурации запуска).
         public bool DiagnosticLogging { get; private set; }
 
@@ -91,6 +109,10 @@ namespace Onec.DebugAdapter.Services
 
             PollMinDelayMs = Math.Max(1, arguments.GetValueAsInt("debugPollMinDelayMs") ?? 25);
             PollMaxDelayMs = Math.Max(PollMinDelayMs, arguments.GetValueAsInt("debugPollMaxDelayMs") ?? 200);
+            CalcWaitingTimeMs = Math.Clamp(arguments.GetValueAsInt("calcWaitingTimeMs") ?? 100, 25, 5000);
+            var retryDelays = GetValueAsIntArray(arguments, "variablesRetryDelaysMs");
+            if (retryDelays is { Count: > 0 })
+                VariablesRetryDelaysMs = retryDelays;
             DiagnosticLogging = arguments.GetValueAsBool("trace") ?? false;
             User = arguments.GetValueAsString("user");
             Password = arguments.GetValueAsString("password");
