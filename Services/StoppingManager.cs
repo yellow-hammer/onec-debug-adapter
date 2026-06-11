@@ -414,11 +414,26 @@ namespace Onec.DebugAdapter.Services
             switch(result.CalculationResult.ViewInterface)
             {
                 case ViewInterface.Enum:
-                    response.Variables = result.CalculationResult.ValueOfEnumInfo.Select(c =>
+                    // Перечислимые коллекции (Соответствие и т.п.): элемент несёт пару Ключ/Значение
+                    // во вложенных свойствах — показываем «ключ = значение» с возможностью раскрытия.
+                    response.Variables = result.CalculationResult.ValueOfEnumInfo.Select((c, index) =>
                     {
+                        var props = c.ValueOfContextPropInfoSpecified ? c.ValueOfContextPropInfo : null;
+                        var key = props?.FirstOrDefault(p => p.PropInfo?.PropName is "Ключ" or "Key");
+                        var value = props?.FirstOrDefault(p => p.PropInfo?.PropName is "Значение" or "Value");
+
+                        var itemPath = new List<SourceCalculationDataItem>(Path)
+                        {
+                            new() { Index = index, IndexSpecified = true, ItemType = SourceCalculationDataItemType.Index }
+                        };
+                        var valueInfo = value?.ValueInfo ?? c.ValueInfo;
+
                         return new Variable()
                         {
-                            Name = c.ValueInfo.Pres.GetUTF8String()
+                            Name = key?.ValueInfo.Pres.GetUTF8String() ?? c.ValueInfo.Pres.GetUTF8String(),
+                            Value = value != null ? value.ValueInfo.Pres.GetUTF8String() : (key != null ? "" : c.ValueInfo.Pres.GetUTF8String()),
+                            Type = valueInfo.TypeName,
+                            VariablesReference = GetVariableReference(ThreadId, FrameId, itemPath, valueInfo)
                         };
                     }).ToList();
                     break;
@@ -889,6 +904,10 @@ namespace Onec.DebugAdapter.Services
                 reference = _variableIdentifiers.Add((threadId, frameId, path, ViewInterface.Context));
             else if (data.IsIIndexedCollectionRo)
                 reference = _variableIdentifiers.Add((threadId, frameId, path, ViewInterface.Collection));
+            else if (data.IsSupportIEnumValue)
+                // Перечислимые значения (Соответствие и т.п.) раскрываются интерфейсом Enum.
+                reference = _variableIdentifiers.Add((threadId, frameId, path, ViewInterface.Enum));
+
             return reference;
         }
 
