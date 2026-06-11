@@ -36,6 +36,9 @@ namespace Onec.DebugAdapter.Services
         private readonly References<(int ThreadId, int FrameId, List<SourceCalculationDataItem> Path, ViewInterface Interface)> _variableIdentifiers = new();
 
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), SetBreakpointsArguments> _moduleSetBreakpointsArguments = new();
+        // Запросы точек идут подряд (правка точки в редакторе порождает быструю пару запросов) —
+        // конкурентные setBreakpoints сервер отвергает.
+        private readonly SemaphoreSlim _setBreakpointsLock = new(1, 1);
         // Идентификаторы DAP-точек по модулю (в порядке BpInfo) — для адресного применения correctedBP.
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), List<int>> _moduleBreakpointIds = new();
         private int _nextBreakpointId = 1;
@@ -100,6 +103,19 @@ namespace Onec.DebugAdapter.Services
 
         public async Task<SetBreakpointsResponse> SetBreakpoints(SetBreakpointsArguments args)
         {
+            await _setBreakpointsLock.WaitAsync(_cancellation);
+            try
+            {
+                return await SetBreakpointsCore(args);
+            }
+            finally
+            {
+                _setBreakpointsLock.Release();
+            }
+        }
+
+        private async Task<SetBreakpointsResponse> SetBreakpointsCore(SetBreakpointsArguments args)
+        {
             var debuggerResponse = new SetBreakpointsResponse();
 
             var requestedModule = _metadataProvider.ModuleInfoByPath(args.Source.Path.CapitalizeFirstChar());
@@ -107,6 +123,7 @@ namespace Onec.DebugAdapter.Services
             _moduleSetBreakpointsArguments.TryAdd((requestedModule.Extension, requestedModule.ObjectId, requestedModule.PropertyId), args);
 
             var request = _configuration.CreateRequest<RdbgSetBreakpointsRequest>();
+            var modules = new Dictionary<(string Extension, string ObjectId, string PropertyId), ModuleBpInfoInternal>();
 
             _moduleSetBreakpointsArguments.Select(c => c.Value).ToList().ForEach(cArgs =>
             {
@@ -135,11 +152,35 @@ namespace Onec.DebugAdapter.Services
                     moduleInfo.Id.Type = BslModuleType.ExtensionModule;
                 Log.Debug($"точки: модуль type={moduleInfo.Id.Type} url=\"{moduleInfo.Id.Url}\" obj={objectId} prop={propertyId} строки=[{string.Join(",", cArgs.Breakpoints.Select(b => b.Line))}]{(includeInRequest ? "" : " — пропущен (нет собранного файла)")}");
 
+                // Точка на неисполняемой строке (комментарий, директива, препроцессор) молча не работает —
+                // сдвигаем до исполняемой; VS Code подвинет маркер по строке из ответа.
+                string? moduleSource = null;
+                var localPath = _metadataProvider.LocalModulePath((extension, objectId, propertyId));
+                if (localPath != null)
+                    try { moduleSource = File.ReadAllText(localPath); } catch { /* без исходника — без сдвига */ }
+
+                var requestedLines = new List<int>();
                 cArgs.Breakpoints.ForEach(bp =>
                 {
+                    var line = moduleSource == null ? bp.Line : BslModuleAnalyzer.AdjustBreakpointLine(moduleSource, bp.Line);
+                    if (line != bp.Line)
+                        Log.Debug($"точка {Path.GetFileName(localPath)}:{bp.Line} сдвинута на исполняемую строку {line}");
+                    requestedLines.Add(line);
+
+                    // Исполняемой строки ниже не нашлось (хвост модуля) — серверу такую точку не шлём.
+                    if (moduleSource != null && !BslModuleAnalyzer.IsLineBreakable(moduleSource, line))
+                    {
+                        Log.Debug($"точка {Path.GetFileName(localPath)}:{bp.Line} без исполняемой строки ниже — не отправлена");
+                        return;
+                    }
+
+                    // Точки, схлопнувшиеся в одну строку, серверу отправляем один раз.
+                    if (moduleInfo.BpInfo.Any(x => (int)x.Line == line))
+                        return;
+
                     moduleInfo.BpInfo.Add(new BreakpointInfo()
                     {
-                        Line = bp.Line,
+                        Line = line,
                         HitCount = int.TryParse(bp.HitCondition, out var hit) ? hit : 1,
                         BreakOnHitCount = !string.IsNullOrEmpty(bp.HitCondition),
                         IsActive = true,
@@ -152,22 +193,25 @@ namespace Onec.DebugAdapter.Services
                 });
 
                 if (includeInRequest)
-                    request.BpWorkspace.Add(moduleInfo);
+                    modules[(extension, objectId, propertyId)] = moduleInfo;
 
                 if (requestedModule == (extension, objectId, propertyId))
                 {
                     var ids = moduleInfo.BpInfo.Select(_ => System.Threading.Interlocked.Increment(ref _nextBreakpointId)).ToList();
                     _moduleBreakpointIds[(extension, objectId, propertyId)] = ids;
 
-                    debuggerResponse.Breakpoints = moduleInfo.BpInfo.Select((c, i) => new Breakpoint()
-                    {
-                        Id = ids[i],
-                        Line = (int)(c.Line),
-                        Source = args.Source,
-                        Verified = includeInRequest
-                    }).ToList();
+                    var idByLine = moduleInfo.BpInfo
+                        .Select((c, i) => (Line: (int)c.Line, Id: ids[i]))
+                        .ToDictionary(x => x.Line, x => x.Id);
+
+                    debuggerResponse.Breakpoints = requestedLines.Select(line => idByLine.TryGetValue(line, out var id)
+                        ? new Breakpoint() { Id = id, Line = line, Source = args.Source, Verified = includeInRequest }
+                        : new Breakpoint() { Line = line, Source = args.Source, Verified = false }).ToList();
                 }
             });
+
+            foreach (var moduleInfo in modules.Values)
+                request.BpWorkspace.Add(moduleInfo);
 
             await _debugServerClient.SetBreakpoints(request);
 
@@ -706,7 +750,6 @@ namespace Onec.DebugAdapter.Services
                 reference = _variableIdentifiers.Add((threadId, frameId, path, ViewInterface.Context));
             else if (data.IsIIndexedCollectionRo)
                 reference = _variableIdentifiers.Add((threadId, frameId, path, ViewInterface.Collection));
-
             return reference;
         }
 

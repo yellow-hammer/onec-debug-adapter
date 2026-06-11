@@ -13,5 +13,7 @@ namespace Onec.DebugAdapter.V8
         bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info);
 
         string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info);
+
+        string? LocalModulePath((string Extension, string ObjectId, string PropertyId) info);
     }
 }

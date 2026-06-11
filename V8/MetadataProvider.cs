@@ -261,6 +261,10 @@ namespace Onec.DebugAdapter.V8
         public bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info)
             => _externalModules.ContainsKey(info);
 
+        /// <summary>Путь модуля на машине адаптера (для чтения исходника), независимо от кросс-ОС резолва.</summary>
+        public string? LocalModulePath((string Extension, string ObjectId, string PropertyId) info)
+            => _pathsByModuleInfo.TryGetValue(info, out var path) ? path : null;
+
         public string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info)
             => _externalModules.TryGetValue(info, out var url) ? url : string.Empty;
 
