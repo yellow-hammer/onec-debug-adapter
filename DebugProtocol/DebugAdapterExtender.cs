@@ -23,12 +23,13 @@ namespace Onec.DebugAdapter.DebugProtocol
             _cancellation = cancellationToken;
             _client = debugProtocolClient;
 
-            _client.RegisterRequestType<SetAutoAttachTargetTypesRequest, SetAutoAttachTargetTypesArguments>(async handler =>
+            _client.RegisterRequestType<SetAutoAttachTargetTypesRequest, SetAutoAttachTargetTypesArguments, SetAutoAttachTargetTypesResponse>(async handler =>
             {
                 try
                 {
                     var types = handler.Arguments.Types.Select(c => Enum.Parse<DebugTargetType>(c));
                     await _debugTargetsManager.SetAutoAttachTargetTypes(types.ToList());
+                    handler.SetResponse(new SetAutoAttachTargetTypesResponse());
                 }
                 catch (System.Exception ex)
                 {
@@ -37,7 +38,7 @@ namespace Onec.DebugAdapter.DebugProtocol
                 }
             });
 
-            _client.RegisterRequestType<AttachDebugTargetRequest, AttachDebugTargetArguments>(async handler =>
+            _client.RegisterRequestType<AttachDebugTargetRequest, AttachDebugTargetArguments, AttachDebugTargetResponse>(async handler =>
             {
                 try
                 {
@@ -49,6 +50,7 @@ namespace Onec.DebugAdapter.DebugProtocol
                         var toAttachTargets = new List<DebugTargetId>() { target };
                         await _debugTargetsManager.AttachDebugTargets(toAttachTargets);
                     }
+                    handler.SetResponse(new AttachDebugTargetResponse());
                 }
                 catch (System.Exception ex)
                 {

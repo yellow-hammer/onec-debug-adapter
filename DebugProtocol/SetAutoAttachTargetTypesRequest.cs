@@ -3,14 +3,18 @@ using Newtonsoft.Json;
 
 namespace Onec.DebugAdapter.DebugProtocol
 {
-    public class SetAutoAttachTargetTypesRequest : DebugRequest<SetAutoAttachTargetTypesArguments>
+    public class SetAutoAttachTargetTypesRequest : DebugRequestWithResponse<SetAutoAttachTargetTypesArguments, SetAutoAttachTargetTypesResponse>
     {
         public SetAutoAttachTargetTypesRequest() : base("SetAutoAttachTargetTypesRequest") { }
     }
 
-    public class SetAutoAttachTargetTypesArguments 
+    public class SetAutoAttachTargetTypesArguments
     {
         [JsonProperty("types")]
         public string[] Types { get; set; } = Array.Empty<string>();
     };
+
+    public class SetAutoAttachTargetTypesResponse : ResponseBody
+    {
+    }
 }

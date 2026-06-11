@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Onec.DebugAdapter.DebugProtocol
 {
-    internal class AttachDebugTargetRequest : DebugRequest<AttachDebugTargetArguments>
+    internal class AttachDebugTargetRequest : DebugRequestWithResponse<AttachDebugTargetArguments, AttachDebugTargetResponse>
     {
         public AttachDebugTargetRequest() : base("AttachDebugTargetRequest") { }
     }
@@ -15,5 +15,9 @@ namespace Onec.DebugAdapter.DebugProtocol
     internal class AttachDebugTargetArguments
     {
         public string Id { get; set; } = null!;
+    }
+
+    internal class AttachDebugTargetResponse : ResponseBody
+    {
     }
 }
