@@ -210,12 +210,83 @@ namespace Onec.DebugAdapter.Services
                 }
             });
 
+            MirrorBreakpointsToExtensions(modules);
+
             foreach (var moduleInfo in modules.Values)
                 request.BpWorkspace.Add(moduleInfo);
 
             await _debugServerClient.SetBreakpoints(request);
 
             return debuggerResponse;
+        }
+
+        /// <summary>
+        /// Дублирует точки базовой конфигурации в процедуры-заместители расширений: при «Вместо»/
+        /// «ИзменениеИКонтроль» базовый код не выполняется и точка без зеркала молча не срабатывает.
+        /// </summary>
+        private void MirrorBreakpointsToExtensions(Dictionary<(string Extension, string ObjectId, string PropertyId), ModuleBpInfoInternal> modules)
+        {
+            foreach (var (info, moduleInfo) in modules.ToList())
+            {
+                if (info.Extension.Length > 0 || _metadataProvider.IsExternalModule(info))
+                    continue;
+
+                var basePath = _metadataProvider.LocalModulePath(info);
+                if (basePath == null)
+                    continue;
+                string baseContent;
+                try { baseContent = File.ReadAllText(basePath); }
+                catch { continue; }
+
+                foreach (var counterpart in _metadataProvider.ExtensionCounterparts(info))
+                {
+                    var extensionPath = _metadataProvider.LocalModulePath(counterpart);
+                    if (extensionPath == null)
+                        continue;
+                    string extensionContent;
+                    try { extensionContent = File.ReadAllText(extensionPath); }
+                    catch { continue; }
+
+                    foreach (var bp in moduleInfo.BpInfo.ToList())
+                    {
+                        var mappedLines = BslModuleAnalyzer.MapBaseLineToExtensionLines(baseContent, (int)bp.Line, extensionContent);
+                        if (mappedLines.Count == 0)
+                            continue;
+
+                        if (!modules.TryGetValue(counterpart, out var extensionModule))
+                        {
+                            extensionModule = new ModuleBpInfoInternal()
+                            {
+                                Id = new BslModuleIdInternal()
+                                {
+                                    ExtensionName = counterpart.Extension,
+                                    ObjectId = counterpart.ObjectId,
+                                    PropertyId = counterpart.PropertyId,
+                                    Type = BslModuleType.ExtensionModule
+                                }
+                            };
+                            modules[counterpart] = extensionModule;
+                        }
+
+                        foreach (var line in mappedLines.Where(l => extensionModule.BpInfo.All(x => (int)x.Line != l)))
+                        {
+                            extensionModule.BpInfo.Add(new BreakpointInfo()
+                            {
+                                Line = line,
+                                HitCount = bp.HitCount,
+                                BreakOnHitCount = bp.BreakOnHitCount,
+                                IsActive = true,
+                                PutExpressionResult = bp.PutExpressionResult,
+                                ShowOutputMessage = bp.ShowOutputMessage,
+                                ContinueExecution = bp.ContinueExecution,
+                                Condition = bp.Condition,
+                                BreakOnCondition = bp.BreakOnCondition
+                            });
+                            Log.Debug($"зеркало точки: {Path.GetFileName(basePath)}:{bp.Line} → расширение «{counterpart.Extension}»:{line}");
+                        }
+                    }
+                }
+            }
         }
 
         public async Task<SetExceptionBreakpointsResponse> SetExceptionBreakpoints(SetExceptionBreakpointsArguments args)

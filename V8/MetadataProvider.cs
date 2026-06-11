@@ -265,6 +265,25 @@ namespace Onec.DebugAdapter.V8
         public string? LocalModulePath((string Extension, string ObjectId, string PropertyId) info)
             => _pathsByModuleInfo.TryGetValue(info, out var path) ? path : null;
 
+        /// <summary>
+        /// Модули расширений с тем же путём внутри выгрузки, что у модуля базовой конфигурации, —
+        /// кандидаты на зеркалирование точек останова при заместителях («Вместо»/«После»/«Перед»).
+        /// </summary>
+        public IEnumerable<(string Extension, string ObjectId, string PropertyId)> ExtensionCounterparts((string Extension, string ObjectId, string PropertyId) info)
+        {
+            if (!_relPathsByModuleInfo.TryGetValue(info, out var relKey))
+                yield break;
+
+            var suffix = relKey[(relKey.IndexOf('/') + 1)..];
+            foreach (var kv in _modulesInfoByRelPath)
+            {
+                if (kv.Value.Extension.Length == 0 || kv.Value.Equals(info) || IsExternalModule(kv.Value))
+                    continue;
+                if (kv.Key.EndsWith("/" + suffix, StringComparison.OrdinalIgnoreCase))
+                    yield return kv.Value;
+            }
+        }
+
         public string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info)
             => _externalModules.TryGetValue(info, out var url) ? url : string.Empty;
 

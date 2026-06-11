@@ -15,5 +15,7 @@ namespace Onec.DebugAdapter.V8
         string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info);
 
         string? LocalModulePath((string Extension, string ObjectId, string PropertyId) info);
+
+        IEnumerable<(string Extension, string ObjectId, string PropertyId)> ExtensionCounterparts((string Extension, string ObjectId, string PropertyId) info);
     }
 }
