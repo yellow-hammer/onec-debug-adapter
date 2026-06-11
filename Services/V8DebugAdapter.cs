@@ -141,7 +141,8 @@ namespace Onec.DebugAdapter.Services
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                SetProtocolError(responder, "Ошибка при обработке запроса конфигурации точек останова", ex);
+                Log.Debug($"setBreakpoints: ошибка — {ex.Message}");
+                SetProtocolError(responder, $"Ошибка при обработке запроса конфигурации точек останова: {ex.Message}", ex);
             }
         }
 

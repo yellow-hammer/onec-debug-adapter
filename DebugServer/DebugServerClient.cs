@@ -104,7 +104,11 @@ namespace Onec.DebugAdapter.DebugServer
             restRequest.AddQueryParameter("cmd", "setBreakpoints");
             restRequest.AddXmlBody(request);
 
-            await _client.PostAsync(restRequest, cancellationToken);
+            // Текст ошибки сервер кладёт в тело ответа — пробрасываем его, а не голый код статуса.
+            var response = await _client.ExecutePostAsync(restRequest, cancellationToken);
+            if (!response.IsSuccessful)
+                throw new InvalidOperationException(
+                    $"setBreakpoints: {(int)response.StatusCode} {response.StatusDescription}. {response.Content}".Trim());
         }
 
         public async Task SetBreakOnRTE(RdbgSetRunTimeErrorProcessingRequest request, CancellationToken cancellationToken = default)

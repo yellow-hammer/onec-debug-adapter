@@ -45,6 +45,7 @@ namespace Onec.DebugAdapter.DebugServer
             var minDelay = _debugConfiguration.PollMinDelayMs;
             var maxDelay = _debugConfiguration.PollMaxDelayMs;
             var delay = minDelay;
+            string? lastErrorMessage = null;
 
             Task.Run(async () =>
             {
@@ -54,6 +55,7 @@ namespace Onec.DebugAdapter.DebugServer
                     {
                         var response = await _debugServerClient.PingDebugUiParams(_debugConfiguration.DebuggerID, cancellationToken);
                         var commands = response?.Result ?? new();
+                        lastErrorMessage = null;
 
                         // Адаптивный бэкофф: пришли команды — опрашиваем часто, простаиваем — реже.
                         delay = commands.Count > 0 ? minDelay : Math.Min(maxDelay, delay * 2);
@@ -112,7 +114,12 @@ namespace Onec.DebugAdapter.DebugServer
                         if (_stopped || _cancellation.IsCancellationRequested)
                             break;
 
-                        _debugProtocolClient.SendError(ex);
+                        // Одинаковая ошибка на каждом цикле опроса — сообщаем один раз, не заваливая консоль.
+                        if (ex.Message != lastErrorMessage)
+                        {
+                            lastErrorMessage = ex.Message;
+                            _debugProtocolClient.SendError(ex);
+                        }
                         // Пауза, чтобы повторяющаяся ошибка не превращалась в плотный цикл.
                         try { await Task.Delay(maxDelay, cancellationToken); }
                         catch (TaskCanceledException) { break; }
