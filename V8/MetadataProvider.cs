@@ -248,7 +248,7 @@ namespace Onec.DebugAdapter.V8
                 var buildFile = _configuration.ExternalBuildFile(artifactName);
                 var url = buildFile == null ? "" : "file://" + ToForwardSlashes(buildFile);
                 if (buildFile == null)
-                    Log.Debug($"внешний артефакт «{artifactName}»: собранный файл не найден (externalDataProcessorsBuilds/externalReportsBuilds) — точки в его модулях работать не будут");
+                    Log.Debug($"внешний артефакт «{artifactName}»: собранный файл не найден (externalFilesBuilds) — точки в его модулях работать не будут");
 
                 await mdReaderBlock.SendAsync((string.Empty, rootXml, sourceDir, url), cancellationToken).ConfigureAwait(false);
             }

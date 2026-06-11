@@ -52,15 +52,16 @@ namespace Onec.DebugAdapter.Services
             return result;
         }
 
-        private void InitExternalBuilds(Dictionary<string, JToken> arguments, string key, string fileExtension)
+        private void InitExternalBuilds(Dictionary<string, JToken> arguments, string key)
         {
             var dirs = arguments.GetValueAsStringArray(key);
             if (dirs == null)
                 return;
 
             foreach (var dir in dirs.Where(Directory.Exists))
-                foreach (var file in Directory.EnumerateFiles(dir, "*" + fileExtension))
-                    _externalBuildFiles.TryAdd(Path.GetFileNameWithoutExtension(file), Path.GetFullPath(file));
+                foreach (var pattern in new[] { "*.epf", "*.erf" })
+                    foreach (var file in Directory.EnumerateFiles(dir, pattern))
+                        _externalBuildFiles.TryAdd(Path.GetFileNameWithoutExtension(file), Path.GetFullPath(file));
         }
 
         // Путь из конфигурации запуска может указывать и на каталог артефакта (содержит <Имя>.xml),
@@ -117,10 +118,8 @@ namespace Onec.DebugAdapter.Services
             User = arguments.GetValueAsString("user");
             Password = arguments.GetValueAsString("password");
 
-            InitExternalSources(arguments, "externalDataProcessors");
-            InitExternalSources(arguments, "externalReports");
-            InitExternalBuilds(arguments, "externalDataProcessorsBuilds", ".epf");
-            InitExternalBuilds(arguments, "externalReportsBuilds", ".erf");
+            InitExternalSources(arguments, "externalFilesSrc");
+            InitExternalBuilds(arguments, "externalFilesBuilds");
 
             DebugServerHost = arguments.GetValueAsString("debugServerHost");
             
