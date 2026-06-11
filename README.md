@@ -47,9 +47,12 @@ dotnet OnecDebugAdapter.dll
 - `debugServerHost` / `debugServerPort` — адрес HTTP‑сервера отладки 1С.
 - `extensions` — массив путей к выгрузкам расширений конфигурации.
 - `autoAttachTypes` — список типов подключаемых клиентов (Client, ManagedClient, Server и т.п.).
+- `externalFilesSrc` / `externalFilesBuilds` — каталоги исходников и собранных файлов внешних обработок и отчётов.
+- `user` / `password` — автовход в предприятие.
+- `trace` — диагностический лог адаптера (события AdapterLog).
 
-Конкретные примеры конфигурации и сценарии запуска см. в README расширения
-[`vscode-1c-platform-tools`](https://github.com/yellow-hammer/vscode-1c-platform-tools).
+Полное пользовательское руководство со всеми параметрами и сценариями —
+[docs/debug.md расширения vscode-1c-platform-tools](https://github.com/yellow-hammer/vscode-1c-platform-tools/blob/main/docs/debug.md).
 
 ## Релизы
 
@@ -60,5 +63,5 @@ dotnet OnecDebugAdapter.dll
 2. Упаковывает каталoг `out/onec-debug-adapter` в архив `onec-debug-adapter-vX.Y.Z.zip`.
 3. Прикрепляет архив к релизу с тем же тегом.
 
-Расширение `vscode-1c-platform-tools` при сборке (`npm run build:onec-adapter`)
-загружает соответствующий архив релиза и раскладывает его в `bin/onec-debug-adapter/` внутри VSIX.
+Расширение `vscode-1c-platform-tools` скачивает архив последнего релиза в рантайме
+при первом запуске отладки — адаптер в VSIX не бандлится.
