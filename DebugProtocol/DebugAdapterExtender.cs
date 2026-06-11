@@ -10,12 +10,14 @@ namespace Onec.DebugAdapter.DebugProtocol
         private CancellationToken _cancellation;
         private readonly IDebugTargetsManager _debugTargetsManager;
         private readonly IDebugServerListener _debugServerListener;
+        private readonly IMeasureManager _measureManager;
         private DebugProtocolClient _client = null!;
 
-        public DebugAdapterExtender(IDebugTargetsManager debugTargetsManager, IDebugServerListener serverListener)
+        public DebugAdapterExtender(IDebugTargetsManager debugTargetsManager, IDebugServerListener serverListener, IMeasureManager measureManager)
         {
             _debugServerListener = serverListener;
             _debugTargetsManager = debugTargetsManager;
+            _measureManager = measureManager;
         }
 
         public void Init(DebugProtocolClient debugProtocolClient, CancellationToken cancellationToken)
@@ -84,6 +86,22 @@ namespace Onec.DebugAdapter.DebugProtocol
                 }
             });
 
+            _client.RegisterRequestType<SetMeasureModeRequest, SetMeasureModeArguments, SetMeasureModeResponse>(async handler =>
+            {
+                try
+                {
+                    await _measureManager.SetMeasureMode(handler.Arguments.Enabled);
+                    // Без явного ответа запрос остаётся висеть у клиента до конца сессии.
+                    handler.SetResponse(new SetMeasureModeResponse());
+                }
+                catch (System.Exception ex)
+                {
+                    _client.SendError(ex);
+                    handler.SetError(new ProtocolException("Ошибка переключения режима замера производительности"));
+                }
+            });
+
+            _measureManager.Init(_client, _cancellation);
             _debugServerListener.ShowMetadataObject += ShowMetadataObjectHandler;
         }
 

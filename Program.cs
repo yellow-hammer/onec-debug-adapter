@@ -39,6 +39,7 @@ namespace Onec.DebugAdapter
                     sc.AddScoped<IDebugServerListener, DebugServerListener>();
                     sc.AddScoped<IDebugTargetsManager, DebugTargetsManager>();
                     sc.AddScoped<IStoppingManager, StoppingManager>();
+                    sc.AddScoped<IMeasureManager, MeasureManager>();
 					sc.AddScoped<DebuggeeProcess>();
 					sc.AddScoped<DebugServerProcess>();
 					sc.AddScoped<V8DebugAdapter>();

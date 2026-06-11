@@ -111,6 +111,17 @@ namespace Onec.DebugAdapter.DebugServer
                     $"setBreakpoints: {(int)response.StatusCode} {response.StatusDescription}. {response.Content}".Trim());
         }
 
+        public async Task SetMeasureMode(RdbgSetMeasureModeRequest request, CancellationToken cancellationToken = default)
+        {
+			await WaitInitialized();
+
+			var restRequest = new RestRequest("rdbg");
+            restRequest.AddQueryParameter("cmd", "setMeasureMode");
+            restRequest.AddXmlBody(request);
+
+            await _client.PostAsync(restRequest, cancellationToken);
+        }
+
         public async Task SetBreakOnRTE(RdbgSetRunTimeErrorProcessingRequest request, CancellationToken cancellationToken = default)
         {
 			await WaitInitialized();

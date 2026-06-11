@@ -13,6 +13,7 @@ namespace Onec.DebugAdapter.DebugServer
         event EventHandler<ForegroundHelperRequestArgs>? ForegroundHelperRequested;
         event EventHandler<ProcessForegroundHelperArgs>? ProcessForegroundHelper;
         event EventHandler<ShowMetadataObjectArgs>? ShowMetadataObject;
+        event EventHandler<MeasureResultsEventArgs>? MeasureResults;
 
         void Run(DebugProtocolClient debugProtocolClient, CancellationToken cancellationToken);
         void Stop();

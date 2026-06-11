@@ -25,6 +25,7 @@ namespace Onec.DebugAdapter.Services
         private readonly IDebugServerListener _debugServerListener;
         private readonly IDebugTargetsManager _debugTargetsManager;
         private readonly IStoppingManager _stoppingManager;
+        private readonly IMeasureManager _measureManager;
         private readonly IDebugAdapterExtender _debugAdapterExtender;
         private readonly DebugServerProcess _debugServer;
 		private readonly DebuggeeProcess _debuggee;
@@ -36,6 +37,7 @@ namespace Onec.DebugAdapter.Services
             IDebugServerListener debugServerListener,
             IDebugTargetsManager debugTargetsManager,
             IStoppingManager stoppingManager,
+            IMeasureManager measureManager,
             IDebugAdapterExtender debugAdapterExtender,
             DebuggeeProcess debuggee,
             DebugServerProcess debugServer)
@@ -46,6 +48,7 @@ namespace Onec.DebugAdapter.Services
             _debugServerListener = debugServerListener;
             _debugTargetsManager = debugTargetsManager;
             _stoppingManager = stoppingManager;
+            _measureManager = measureManager;
             _debugAdapterExtender = debugAdapterExtender;
 			_debugServer = debugServer;
             _debuggee = debuggee;
@@ -310,7 +313,10 @@ namespace Onec.DebugAdapter.Services
             _debugServerListener.Stop();
 
             if (_attached)
+            {
+                await _measureManager.DisableOnDisconnect();
                 await _debugServerClient.DetachDebugUI(_configuration.CreateRequest<RdbgDetachDebugUiRequest>());
+            }
 
             _attached = false;
         }

@@ -27,6 +27,7 @@ namespace Onec.DebugAdapter.DebugServer
         public event EventHandler<ForegroundHelperRequestArgs>? ForegroundHelperRequested;
         public event EventHandler<ProcessForegroundHelperArgs>? ProcessForegroundHelper;
         public event EventHandler<ShowMetadataObjectArgs>? ShowMetadataObject;
+        public event EventHandler<MeasureResultsEventArgs>? MeasureResults;
 
         public DebugServerListener(IDebugConfiguration debugConfiguration, IDebugServerClient debugServerClient)
         {
@@ -94,8 +95,10 @@ namespace Onec.DebugAdapter.DebugServer
                                 case DbguiExtCmds.CorrectedBp:
                                     CorrectedBreakpoints?.Invoke(this, new CorrectedBreakpointsArgs((extCommand as DbguiExtCmdInfoCorrectedBp)!));
                                     break;
-                                case DbguiExtCmds.RteOnBpConditionProcessing:
                                 case DbguiExtCmds.MeasureResultProcessing:
+                                    MeasureResults?.Invoke(this, new MeasureResultsEventArgs((extCommand as DbguiExtCmdInfoMeasure)!));
+                                    break;
+                                case DbguiExtCmds.RteOnBpConditionProcessing:
                                 case DbguiExtCmds.ValueModified:
                                 case DbguiExtCmds.ErrorViewInfo:
                                 case DbguiExtCmds.Unknown:
