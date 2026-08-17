@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Onec.DebugAdapter.DebugProtocol;
@@ -27,8 +28,27 @@ namespace Onec.DebugAdapter
             AppDomain.CurrentDomain.UnhandledException += (_, e) =>
                 Console.Error.WriteLine($"[onec-debug-adapter] необработанное исключение: {(e.ExceptionObject as System.Exception)?.Message}");
 
-            var host = new HostBuilder()
+            IHost host;
+            try
+            {
+                host = BuildHost(args);
+            }
+            catch (System.Exception ex)
+            {
+                // Ошибка сборки хоста (например, недопустимое значение параметра) не должна выглядеть
+                // как молчаливое падение: сообщаем причину и завершаемся кодом возврата.
+                Console.Error.WriteLine($"[onec-debug-adapter] не удалось запустить адаптер: {ex.Message}");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            await host.RunAsync();
+        }
+
+        private static IHost BuildHost(string[] args)
+            => new HostBuilder()
                 .ConfigureDefaults(args)
+                .ConfigureAppConfiguration(RemoveProcessEnvironment)
                 .ConfigureLogging(builder => builder.ClearProviders())
                 .ConfigureServices((context, sc) =>
                 {
@@ -52,7 +72,20 @@ namespace Onec.DebugAdapter
                 })
                 .Build();
 
-            await host.RunAsync();
+        /// <summary>
+        /// Убирает из конфигурации переменные окружения процесса. Параметры адаптера (debug, port,
+        /// persistent) задаются только аргументами командной строки, а имена короткие: чужая переменная
+        /// окружения вроде DEBUG или PORT иначе становится значением параметра и ломает запуск.
+        /// </summary>
+        private static void RemoveProcessEnvironment(IConfigurationBuilder builder)
+        {
+            var envSources = builder.Sources
+                .OfType<EnvironmentVariablesConfigurationSource>()
+                .Where(source => string.IsNullOrEmpty(source.Prefix))
+                .ToList();
+
+            foreach (var source in envSources)
+                builder.Sources.Remove(source);
         }
     }
 }
