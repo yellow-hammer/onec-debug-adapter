@@ -45,7 +45,7 @@ namespace Onec.DebugAdapter
             await host.RunAsync();
         }
 
-        private static IHost BuildHost(string[] args)
+        internal static IHost BuildHost(string[] args)
             => new HostBuilder()
                 .ConfigureDefaults(args)
                 .ConfigureAppConfiguration(RemoveProcessEnvironment)

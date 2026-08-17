@@ -18,6 +18,22 @@
 			}
 		},
 		{
+			"label": "Тесты адаптера",
+			"type": "process",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"${workspaceFolder}/onec-debug-adapter.sln",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary;ForceNoAlign"
+			],
+			"problemMatcher": "$msCompile",
+			"group": {
+				"kind": "test",
+				"isDefault": true
+			}
+		},
+		{
 			"label": "Опубликовать адаптер (dotnet publish)",
 			"type": "process",
 			"command": "dotnet",
