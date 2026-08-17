@@ -15,7 +15,8 @@
 
 ## Требования
 
-- Установленный [.NET 8 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0).
+- Для сборок из релиза под win-x64, linux-x64, osx-x64 и osx-arm64 ничего ставить не нужно: рантайм .NET лежит внутри архива. На Linux рантайму нужен системный пакет `libicu`, в большинстве дистрибутивов он уже стоит.
+- Для универсального архива и сборки из исходников нужен [.NET 8](https://dotnet.microsoft.com/download/dotnet/8.0): Runtime и SDK соответственно.
 
 ## Сборка и запуск локально
 
@@ -53,15 +54,3 @@ dotnet OnecDebugAdapter.dll
 
 Полное пользовательское руководство со всеми параметрами и сценариями —
 [docs/debug.md расширения vscode-1c-platform-tools](https://github.com/yellow-hammer/vscode-1c-platform-tools/blob/main/docs/debug.md).
-
-## Релизы
-
-Релизы адаптера публикуются в GitHub Releases этого репозитория.  
-Тег вида `vX.Y.Z`:
-
-1. Запускает GitHub Actions workflow сборки (`dotnet publish -c Release -o out/onec-debug-adapter`).
-2. Упаковывает каталoг `out/onec-debug-adapter` в архив `onec-debug-adapter-vX.Y.Z.zip`.
-3. Прикрепляет архив к релизу с тем же тегом.
-
-Расширение `vscode-1c-platform-tools` скачивает архив последнего релиза в рантайме
-при первом запуске отладки — адаптер в VSIX не бандлится.

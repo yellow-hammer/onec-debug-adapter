@@ -32,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      SELF_CONTAINED_RIDS: win-x64 linux-x64 osx-x64 osx-arm64
 
     steps:
       - name: Получить код
@@ -167,6 +169,34 @@ jobs:
           # Имя asset'а onec-debug-adapter-<tag>.zip — под него настроен загрузчик расширения.
           zip -r "onec-debug-adapter-${{ steps.ver.outputs.tag }}.zip" "onec-debug-adapter"
 
+      - name: Собрать самостоятельные сборки (self-contained)
+        shell: bash
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          for RID in $SELF_CONTAINED_RIDS; do
+            DIR="out/self-contained/$RID"
+            dotnet publish onec-debug-adapter.csproj -c Release -r "$RID" --self-contained true \
+              -o "$DIR/onec-debug-adapter"
+
+            HOST="$DIR/onec-debug-adapter/OnecDebugAdapter"
+            case "$RID" in win-*) HOST="$HOST.exe" ;; esac
+            if [ ! -f "$HOST" ]; then
+              echo "ERROR: $HOST не найден после publish"
+              ls -la "$DIR/onec-debug-adapter"
+              exit 1
+            fi
+            # Рантайм внутри архива: без него нативный хост не запустится на машине без .NET.
+            if [ ! -f "$DIR/onec-debug-adapter/System.Private.CoreLib.dll" ]; then
+              echo "ERROR: в сборке $RID нет рантайма .NET"
+              exit 1
+            fi
+            # Сборка идёт на Linux, поэтому право на выполнение проставляем сами.
+            chmod +x "$HOST"
+
+            ( cd "$DIR" && zip -qr "$GITHUB_WORKSPACE/out/onec-debug-adapter-$RID-$TAG.zip" "onec-debug-adapter" )
+          done
+          ls -la out/*.zip
+
       - name: Создать GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -178,6 +208,10 @@ jobs:
             ${{ steps.changelog.outputs.changelog }}
           files: |
             out/onec-debug-adapter-${{ steps.ver.outputs.tag }}.zip
+            out/onec-debug-adapter-win-x64-${{ steps.ver.outputs.tag }}.zip
+            out/onec-debug-adapter-linux-x64-${{ steps.ver.outputs.tag }}.zip
+            out/onec-debug-adapter-osx-x64-${{ steps.ver.outputs.tag }}.zip
+            out/onec-debug-adapter-osx-arm64-${{ steps.ver.outputs.tag }}.zip
           draft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true' || false }}
           prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true' || false }}
           # Стабильный релиз становится latest: расширение тянет его через releases/latest.
