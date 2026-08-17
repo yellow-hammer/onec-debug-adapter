@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v7
+
+      - name: Установить .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Собрать решение
+        run: dotnet build onec-debug-adapter.sln -c Release --nologo
+
+      - name: Запустить тесты
+        run: dotnet test onec-debug-adapter.sln -c Release --no-build --nologo
