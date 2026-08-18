@@ -85,7 +85,7 @@ namespace Onec.DebugAdapter.Tests
         public void МодулиОбъектаЛежатРядомСMdo()
         {
             var modules = EdtLayout.ModulesIn(Edt("src", "Catalogs", "Справочник1"))
-                .Select(Path.GetFileName)
+                .Select(module => Path.GetFileName(module))
                 .OrderBy(name => name)
                 .ToArray();
 
@@ -96,7 +96,7 @@ namespace Onec.DebugAdapter.Tests
         public void МодулиКонфигурацииЛежатРядомСConfigurationMdo()
         {
             var modules = EdtLayout.ModulesIn(Edt("src", "Configuration"))
-                .Select(Path.GetFileName)
+                .Select(module => Path.GetFileName(module))
                 .OrderBy(name => name)
                 .ToArray();
 

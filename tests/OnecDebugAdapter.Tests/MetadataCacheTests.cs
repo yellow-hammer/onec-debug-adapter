@@ -19,6 +19,20 @@ namespace Onec.DebugAdapter.Tests
             return provider;
         }
 
+        /// <summary>Кэш по внешним артефактам из каталога: собранные файлы лежат рядом с исходным кодом.</summary>
+        private static async Task<MetadataProvider> CacheForExternal(string path)
+        {
+            var configuration = new FakeDebugConfiguration(
+                Fixture("designer"),
+                [],
+                ExternalArtifacts.Descriptors(path),
+                name => "C:/out/epf/" + name + ".epf");
+
+            var provider = new MetadataProvider(configuration);
+            await provider.FillMetadataCache(CancellationToken.None);
+            return provider;
+        }
+
         [Fact]
         public async Task МодулиВФорматеEDTПопадаютВКэш()
         {
@@ -75,10 +89,52 @@ namespace Onec.DebugAdapter.Tests
 
             Assert.Equal("_ДемоРасширение", provider.ModuleInfoByPath(module).Extension);
         }
+
+        [Fact]
+        public async Task МодулиВнешнихАртефактовВФорматеEDTПопадаютВКэш()
+        {
+            var provider = await CacheForExternal(Fixture("external", "edt"));
+
+            var objectModule = Fixture("external", "edt", "src", "ExternalDataProcessors", "ТестоваяВнешняяОбработка", "ObjectModule.bsl");
+            var formModule = Fixture("external", "edt", "src", "ExternalReports", "ТестовыйВнешнийОтчет", "Forms", "ФормаВарианта", "Module.bsl");
+
+            Assert.Equal("4c1090aa-a76e-4693-87c0-6f4b7494467d", provider.ModuleInfoByPath(objectModule).ObjectId);
+            Assert.Equal("a637f77f-3840-441d-a1c3-699c8c5cb7e0", provider.ModuleInfoByPath(objectModule).PropertyId);
+            Assert.Equal("a1c674e3-79da-4ea4-8776-9860a0d1f750", provider.ModuleInfoByPath(formModule).ObjectId);
+            Assert.Equal("32e087ab-1491-49b6-aba7-43571b41ac2b", provider.ModuleInfoByPath(formModule).PropertyId);
+        }
+
+        [Fact]
+        public async Task МодулиВнешнихАртефактовАдресуютсяПоСобранномуФайлу()
+        {
+            var provider = await CacheForExternal(Fixture("external", "edt"));
+            var objectModule = Fixture("external", "edt", "src", "ExternalDataProcessors", "ТестоваяВнешняяОбработка", "ObjectModule.bsl");
+
+            var info = provider.ModuleInfoByPath(objectModule);
+
+            Assert.True(provider.IsExternalModule(info));
+            Assert.Equal("file://C:/out/epf/ТестоваяВнешняяОбработка.epf", provider.ExternalModuleUrl(info));
+        }
+
+        [Fact]
+        public async Task ОдинАртефактВРазныхФорматахДаётОдниИдентификаторы()
+        {
+            var edt = await CacheForExternal(Fixture("external", "edt"));
+            var designer = await CacheForExternal(Fixture("external", "designer"));
+
+            var edtFormModule = Fixture("external", "edt", "src", "ExternalDataProcessors", "ТестоваяВнешняяОбработка", "Forms", "Форма", "Module.bsl");
+            var designerFormModule = Fixture("external", "designer", "ТестоваяВнешняяОбработка", "Forms", "Форма", "Ext", "Form", "Module.bsl");
+
+            Assert.Equal(designer.ModuleInfoByPath(designerFormModule), edt.ModuleInfoByPath(edtFormModule));
+        }
     }
 
     /// <summary>Конфигурация отладки с заданными корнями исходников.</summary>
-    internal sealed class FakeDebugConfiguration(string rootProject, (string Name, string Path)[] extensions) : IDebugConfiguration
+    internal sealed class FakeDebugConfiguration(
+        string rootProject,
+        (string Name, string Path)[] extensions,
+        IReadOnlyList<string>? externalSources = null,
+        Func<string, string?>? externalBuildFile = null) : IDebugConfiguration
     {
         public Task Initialization => Task.CompletedTask;
         public InfoBaseItem InfoBase => new("test", new Dictionary<string, string?>());
@@ -90,8 +146,8 @@ namespace Onec.DebugAdapter.Tests
         public int DebugServerPort => 1550;
         public string RootProject => rootProject;
         public IReadOnlyDictionary<string, string> Extensions => extensions.ToDictionary(item => item.Name, item => item.Path);
-        public IReadOnlyList<string> ExternalSources => [];
-        public string? ExternalBuildFile(string artifactName) => null;
+        public IReadOnlyList<string> ExternalSources => externalSources ?? [];
+        public string? ExternalBuildFile(string artifactName) => externalBuildFile?.Invoke(artifactName);
         public DebugTargetType[] InitialTargetTypes => [];
         public int PollMinDelayMs => 25;
         public int PollMaxDelayMs => 200;

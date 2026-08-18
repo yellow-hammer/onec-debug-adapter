@@ -31,7 +31,7 @@ namespace Onec.DebugAdapter.Services
         private readonly Dictionary<string, string> _extensions = new();
         public IReadOnlyDictionary<string, string> Extensions => _extensions;
 
-        // Каталоги исходников внешних обработок/отчётов (по одному на артефакт).
+        // Описания внешних обработок и отчётов: <Имя>.xml или <Имя>.mdo, по одному на артефакт.
         private readonly List<string> _externalSources = new();
         public IReadOnlyList<string> ExternalSources => _externalSources;
 
@@ -64,22 +64,14 @@ namespace Onec.DebugAdapter.Services
                         _externalBuildFiles.TryAdd(Path.GetFileNameWithoutExtension(file), Path.GetFullPath(file));
         }
 
-        // Путь из конфигурации запуска может указывать и на каталог артефакта (содержит <Имя>.xml),
-        // и на корень с несколькими артефактами — раскладываем до каталогов артефактов.
         private void InitExternalSources(Dictionary<string, JToken> arguments, string key)
         {
             var paths = arguments.GetValueAsStringArray(key);
             if (paths == null)
                 return;
 
-            foreach (var path in paths.Where(Directory.Exists))
-            {
-                if (File.Exists(Path.Combine(path, Path.GetFileName(path.TrimEnd('\\', '/')) + ".xml")))
-                    _externalSources.Add(path);
-                else
-                    _externalSources.AddRange(Directory.EnumerateDirectories(path)
-                        .Where(dir => File.Exists(Path.Combine(dir, Path.GetFileName(dir) + ".xml"))));
-            }
+            foreach (var path in paths)
+                _externalSources.AddRange(ExternalArtifacts.Descriptors(path));
         }
         public DebugTargetType[] InitialTargetTypes { get; private set; } = System.Array.Empty<DebugTargetType>();
 

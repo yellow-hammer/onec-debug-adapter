@@ -20,6 +20,44 @@ namespace Onec.DebugAdapter.V8
             return null;
         }
 
+        /// <summary>Типы объектов, которые EDT держит в отдельном проекте.</summary>
+        private static readonly string[] ExternalTypes = { "ExternalDataProcessors", "ExternalReports" };
+
+        /// <summary>
+        /// Файлы описания внешних обработок и отчётов: путь может быть проектом EDT
+        /// или каталогом с такими проектами.
+        /// </summary>
+        public static IReadOnlyList<string> ExternalObjects(string path)
+        {
+            var objects = ExternalObjectsInProject(path);
+            if (objects.Count > 0)
+                return objects;
+
+            foreach (var child in Directories(path))
+                objects.AddRange(ExternalObjectsInProject(child));
+
+            return objects;
+        }
+
+        private static List<string> ExternalObjectsInProject(string projectDir)
+        {
+            var objects = new List<string>();
+
+            foreach (var sourcesRoot in new[] { projectDir, Path.Combine(projectDir, "src") })
+                foreach (var type in ExternalTypes)
+                    foreach (var objectDir in Directories(Path.Combine(sourcesRoot, type)))
+                    {
+                        var mdoPath = Path.Combine(objectDir, new DirectoryInfo(objectDir).Name + ".mdo");
+                        if (File.Exists(mdoPath))
+                            objects.Add(mdoPath);
+                    }
+
+            return objects;
+        }
+
+        private static IEnumerable<string> Directories(string path)
+            => Directory.Exists(path) ? Directory.EnumerateDirectories(path) : Array.Empty<string>();
+
         /// <summary>Идентификатор объекта: атрибут uuid корневого узла mdo.</summary>
         public static string ObjectId(string mdoPath)
         {

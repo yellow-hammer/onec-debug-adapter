@@ -17,6 +17,7 @@ namespace Onec.DebugAdapter.Services
         int DebugServerPort { get; }
         string RootProject { get; }
         IReadOnlyDictionary<string, string> Extensions { get; }
+        /// <summary>Описания внешних обработок и отчётов: <c>&lt;Имя&gt;.xml</c> или <c>&lt;Имя&gt;.mdo</c>.</summary>
         IReadOnlyList<string> ExternalSources { get; }
         string? ExternalBuildFile(string artifactName);
         DebugTargetType[] InitialTargetTypes { get; }

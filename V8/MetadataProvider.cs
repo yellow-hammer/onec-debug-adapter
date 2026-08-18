@@ -197,9 +197,9 @@ namespace Onec.DebugAdapter.V8
                 }
             }, blockOptions);
 
-            var edtReaderBlock = new ActionBlock<(string Extension, string MdType, string ObjectDir, string Root)>(args =>
+            var edtReaderBlock = new ActionBlock<(string Extension, string MdType, string ObjectDir, string Root, string? ExternalUrl)>(args =>
             {
-                ReadEdtObject(args.Extension, args.Root, args.MdType, args.ObjectDir);
+                ReadEdtObject(args.Extension, args.Root, args.MdType, args.ObjectDir, args.ExternalUrl);
             }, blockOptions);
 
             var rootReaderBlock = new ActionBlock<(string Extension, string Path)>(async args =>
@@ -245,24 +245,27 @@ namespace Onec.DebugAdapter.V8
             foreach(var kv in _configuration.Extensions)
                 await rootReaderBlock.SendAsync((kv.Key, kv.Value));
 
-            // Внешние обработки/отчёты: каталог артефакта содержит <Имя>.xml той же структуры,
-            // что и объект конфигурации, — обрабатывается тем же конвейером. URL собранного файла
-            // обязателен для точек останова (сервер адресует внешние модули по нему).
-            foreach (var sourceDir in _configuration.ExternalSources)
+            // Внешние обработки и отчёты: структура артефакта та же, что у объекта конфигурации,
+            // поэтому оба формата читаются теми же блоками. URL собранного файла обязателен для
+            // точек останова (сервер адресует внешние модули по нему).
+            foreach (var descriptor in _configuration.ExternalSources)
             {
-                var artifactName = Path.GetFileName(sourceDir.TrimEnd('\\', '/'));
-                var rootXml = Path.Combine(sourceDir, artifactName + ".xml");
-                if (!File.Exists(rootXml))
-                    rootXml = Directory.EnumerateFiles(sourceDir, "*.xml", SearchOption.TopDirectoryOnly).FirstOrDefault() ?? "";
-                if (rootXml.Length == 0)
-                    continue;
+                var artifactName = Path.GetFileNameWithoutExtension(descriptor);
+                var artifactDir = Path.GetDirectoryName(descriptor)!;
 
                 var buildFile = _configuration.ExternalBuildFile(artifactName);
                 var url = buildFile == null ? "" : "file://" + ToForwardSlashes(buildFile);
                 if (buildFile == null)
                     Log.Debug($"внешний артефакт «{artifactName}»: собранный файл не найден (externalFilesBuilds) — точки в его модулях работать не будут");
 
-                await mdReaderBlock.SendAsync((string.Empty, rootXml, sourceDir, url), cancellationToken).ConfigureAwait(false);
+                if (descriptor.EndsWith(".mdo", StringComparison.OrdinalIgnoreCase))
+                {
+                    var mdType = Directory.GetParent(artifactDir)!.Name;
+                    await edtReaderBlock.SendAsync((string.Empty, mdType, artifactDir, artifactDir, url), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                await mdReaderBlock.SendAsync((string.Empty, descriptor, artifactDir, url), cancellationToken).ConfigureAwait(false);
             }
 
             rootReaderBlock.Complete();
@@ -305,7 +308,7 @@ namespace Onec.DebugAdapter.V8
         private async Task SendEdtObjects(
             string extension,
             string sourcesRoot,
-            ITargetBlock<(string Extension, string MdType, string ObjectDir, string Root)> reader,
+            ITargetBlock<(string Extension, string MdType, string ObjectDir, string Root, string? ExternalUrl)> reader,
             CancellationToken cancellationToken)
         {
             Log.Debug($"формат EDT: {sourcesRoot}");
@@ -322,12 +325,12 @@ namespace Onec.DebugAdapter.V8
                     continue;
 
                 foreach (var objectDir in Directory.GetDirectories(typeDir))
-                    await reader.SendAsync((extension, mdType, objectDir, sourcesRoot), cancellationToken).ConfigureAwait(false);
+                    await reader.SendAsync((extension, mdType, objectDir, sourcesRoot, null), cancellationToken).ConfigureAwait(false);
             }
         }
 
         /// <summary>Модули одного объекта EDT: собственные, формы и команды.</summary>
-        private void ReadEdtObject(string extension, string sourcesRoot, string mdType, string objectDir)
+        private void ReadEdtObject(string extension, string sourcesRoot, string mdType, string objectDir, string? externalUrl)
         {
             var objectName = new DirectoryInfo(objectDir).Name;
             var mdoPath = Path.Combine(objectDir, objectName + ".mdo");
@@ -336,10 +339,10 @@ namespace Onec.DebugAdapter.V8
 
             var description = EdtLayout.ReadObject(mdoPath);
             foreach (var moduleFile in EdtLayout.ModulesIn(objectDir))
-                CacheModule(moduleFile, extension, description.ObjectId, GetPropertyId(mdType, Path.GetFileNameWithoutExtension(moduleFile)), sourcesRoot, null);
+                CacheModule(moduleFile, extension, description.ObjectId, GetPropertyId(mdType, Path.GetFileNameWithoutExtension(moduleFile)), sourcesRoot, externalUrl);
 
-            CacheEdtChildModules(extension, sourcesRoot, objectDir, "Forms", description.Forms);
-            CacheEdtChildModules(extension, sourcesRoot, objectDir, "Commands", description.Commands);
+            CacheEdtChildModules(extension, sourcesRoot, objectDir, "Forms", description.Forms, externalUrl);
+            CacheEdtChildModules(extension, sourcesRoot, objectDir, "Commands", description.Commands, externalUrl);
         }
 
         /// <summary>Модули форм и команд EDT: идентификатор подчинённого объекта берётся из mdo владельца.</summary>
@@ -348,7 +351,8 @@ namespace Onec.DebugAdapter.V8
             string sourcesRoot,
             string objectDir,
             string directoryName,
-            IReadOnlyDictionary<string, string> ids)
+            IReadOnlyDictionary<string, string> ids,
+            string? externalUrl)
         {
             var childrenDir = Path.Combine(objectDir, directoryName);
             if (!Directory.Exists(childrenDir))
@@ -364,7 +368,7 @@ namespace Onec.DebugAdapter.V8
                 }
 
                 foreach (var moduleFile in EdtLayout.ModulesIn(childDir))
-                    CacheModule(moduleFile, extension, childId, GetPropertyId("", Path.GetFileNameWithoutExtension(moduleFile)), sourcesRoot, null);
+                    CacheModule(moduleFile, extension, childId, GetPropertyId("", Path.GetFileNameWithoutExtension(moduleFile)), sourcesRoot, externalUrl);
             }
         }
 
