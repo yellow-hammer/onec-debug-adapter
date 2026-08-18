@@ -14,7 +14,7 @@ namespace Onec.DebugAdapter.V8
         private readonly ConcurrentDictionary<string, (string Extension, string ObjectId, string PropertyId)> _modulesInfoByPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), string> _pathsByModuleInfo = new();
 
-        // Кросс-ОС отладка: модули дополнительно индексируются по пути относительно корня выгрузки,
+        // Кросс-ОС отладка: модули дополнительно индексируются по пути относительно корня исходного кода,
         // корень клиента определяется по первому совпавшему запросу точек останова.
         private readonly ConcurrentDictionary<string, (string Extension, string ObjectId, string PropertyId)> _modulesInfoByRelPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), string> _relPathsByModuleInfo = new();
@@ -95,7 +95,7 @@ namespace Onec.DebugAdapter.V8
                 return kv.Value;
             }
 
-            throw new KeyNotFoundException($"Путь к модулю не найден в структуре конфигурации: {path}. Убедитесь, что rootProject и extensions в launch.json указывают на выгрузку конфигурации, содержащую этот модуль.");
+            throw new KeyNotFoundException($"Путь к модулю не найден в структуре конфигурации: {path}. Убедитесь, что rootProject и extensions в launch.json указывают на каталог исходного кода, содержащий этот модуль.");
         }
 
         private static string GetPropertyId(string mdType, string moduleName)
@@ -131,7 +131,7 @@ namespace Onec.DebugAdapter.V8
             return typedNode!.Attributes!.GetNamedItem("uuid")!.Value!;
         }
 
-        private async Task FillMetadataCache(CancellationToken cancellationToken)
+        internal async Task FillMetadataCache(CancellationToken cancellationToken)
         {
             var blockOptions = new ExecutionDataflowBlockOptions()
             {
@@ -197,8 +197,20 @@ namespace Onec.DebugAdapter.V8
                 }
             }, blockOptions);
 
+            var edtReaderBlock = new ActionBlock<(string Extension, string MdType, string ObjectDir, string Root)>(args =>
+            {
+                ReadEdtObject(args.Extension, args.Root, args.MdType, args.ObjectDir);
+            }, blockOptions);
+
             var rootReaderBlock = new ActionBlock<(string Extension, string Path)>(async args =>
             {
+                var edtRoot = EdtLayout.FindSourcesRoot(args.Path);
+                if (edtRoot != null)
+                {
+                    await SendEdtObjects(args.Extension, edtRoot, edtReaderBlock, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
                 var mdXml = new XmlDocument();
                 mdXml.Load(Path.Combine(args.Path, "Configuration.xml"));
 
@@ -256,6 +268,8 @@ namespace Onec.DebugAdapter.V8
             rootReaderBlock.Complete();
 
             await mdReaderBlock.Completion;
+            edtReaderBlock.Complete();
+            await edtReaderBlock.Completion;
         }
 
         public bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info)
@@ -266,7 +280,7 @@ namespace Onec.DebugAdapter.V8
             => _pathsByModuleInfo.TryGetValue(info, out var path) ? path : null;
 
         /// <summary>
-        /// Модули расширений с тем же путём внутри выгрузки, что у модуля базовой конфигурации, —
+        /// Модули расширений с тем же путём внутри исходного кода, что у модуля базовой конфигурации, —
         /// кандидаты на зеркалирование точек останова при заместителях («Вместо»/«После»/«Перед»).
         /// </summary>
         public IEnumerable<(string Extension, string ObjectId, string PropertyId)> ExtensionCounterparts((string Extension, string ObjectId, string PropertyId) info)
@@ -287,6 +301,73 @@ namespace Onec.DebugAdapter.V8
         public string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info)
             => _externalModules.TryGetValue(info, out var url) ? url : string.Empty;
 
+        /// <summary>Раздаёт объекты EDT читателям: разбор mdo идёт параллельно, как у формата конфигуратора.</summary>
+        private async Task SendEdtObjects(
+            string extension,
+            string sourcesRoot,
+            ITargetBlock<(string Extension, string MdType, string ObjectDir, string Root)> reader,
+            CancellationToken cancellationToken)
+        {
+            Log.Debug($"формат EDT: {sourcesRoot}");
+
+            var configurationDir = Path.Combine(sourcesRoot, "Configuration");
+            var configurationId = EdtLayout.ObjectId(Path.Combine(configurationDir, "Configuration.mdo"));
+            foreach (var moduleFile in EdtLayout.ModulesIn(configurationDir))
+                CacheModule(moduleFile, extension, configurationId, GetPropertyId("", Path.GetFileNameWithoutExtension(moduleFile)), sourcesRoot, null);
+
+            foreach (var typeDir in Directory.GetDirectories(sourcesRoot))
+            {
+                var mdType = new DirectoryInfo(typeDir).Name;
+                if (mdType == "Configuration")
+                    continue;
+
+                foreach (var objectDir in Directory.GetDirectories(typeDir))
+                    await reader.SendAsync((extension, mdType, objectDir, sourcesRoot), cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>Модули одного объекта EDT: собственные, формы и команды.</summary>
+        private void ReadEdtObject(string extension, string sourcesRoot, string mdType, string objectDir)
+        {
+            var objectName = new DirectoryInfo(objectDir).Name;
+            var mdoPath = Path.Combine(objectDir, objectName + ".mdo");
+            if (!File.Exists(mdoPath))
+                return;
+
+            var description = EdtLayout.ReadObject(mdoPath);
+            foreach (var moduleFile in EdtLayout.ModulesIn(objectDir))
+                CacheModule(moduleFile, extension, description.ObjectId, GetPropertyId(mdType, Path.GetFileNameWithoutExtension(moduleFile)), sourcesRoot, null);
+
+            CacheEdtChildModules(extension, sourcesRoot, objectDir, "Forms", description.Forms);
+            CacheEdtChildModules(extension, sourcesRoot, objectDir, "Commands", description.Commands);
+        }
+
+        /// <summary>Модули форм и команд EDT: идентификатор подчинённого объекта берётся из mdo владельца.</summary>
+        private void CacheEdtChildModules(
+            string extension,
+            string sourcesRoot,
+            string objectDir,
+            string directoryName,
+            IReadOnlyDictionary<string, string> ids)
+        {
+            var childrenDir = Path.Combine(objectDir, directoryName);
+            if (!Directory.Exists(childrenDir))
+                return;
+
+            foreach (var childDir in Directory.GetDirectories(childrenDir))
+            {
+                var childName = new DirectoryInfo(childDir).Name;
+                if (!ids.TryGetValue(childName, out var childId))
+                {
+                    Log.Debug($"{directoryName}: «{childName}» нет в описании объекта, модуль пропущен");
+                    continue;
+                }
+
+                foreach (var moduleFile in EdtLayout.ModulesIn(childDir))
+                    CacheModule(moduleFile, extension, childId, GetPropertyId("", Path.GetFileNameWithoutExtension(moduleFile)), sourcesRoot, null);
+            }
+        }
+
         private void CacheModule(string path, string extension, string objectId, string propertyId, string root, string? externalUrl)
         {
             var normalizedPath = NormalizePath(path);
@@ -296,7 +377,7 @@ namespace Onec.DebugAdapter.V8
             if (externalUrl != null)
                 _externalModules.TryAdd(info, externalUrl);
 
-            // Относительный индекс для кросс-ОС резолва: «<имя каталога корня>/<путь внутри выгрузки>».
+            // Относительный индекс для кросс-ОС резолва: «<имя каталога корня>/<путь внутри исходного кода>».
             var normalizedRoot = NormalizePath(root);
             if (normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
             {

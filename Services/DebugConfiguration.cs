@@ -225,21 +225,39 @@ namespace Onec.DebugAdapter.Services
         private void InitExtension(Dictionary<string, JToken> arguments)
         {
             var paths = arguments.GetValueAsStringArray("extensions");
+            if (paths == null)
+                return;
 
-            if (paths != null)
+            foreach (var path in paths)
             {
-                foreach (var path in paths)
+                var extensionName = ExtensionName(path);
+                if (string.IsNullOrEmpty(extensionName))
                 {
-                    var xml = new XmlDocument();
-                    xml.Load(Path.Join(path, "Configuration.xml"));
-
-                    var xPath = "/*[local-name()='MetaDataObject']/*[local-name()='Configuration']/*[local-name()='Properties']/*[local-name()='Name']";
-                    var extensionName = xml.SelectSingleNode(xPath)?.InnerText;
-
-                    if (!string.IsNullOrEmpty(extensionName))
-                        _extensions.Add(extensionName, path);
+                    Log.Debug($"расширение «{path}» пропущено: исходного кода расширения там нет");
+                    continue;
                 }
+
+                _extensions[extensionName] = path;
             }
+        }
+
+        /// <summary>Имя расширения из его исходного кода; пусто - каталог не содержит расширения.</summary>
+        private static string ExtensionName(string path)
+        {
+            var designerFile = Path.Join(path, "Configuration.xml");
+            if (File.Exists(designerFile))
+            {
+                var xml = new XmlDocument();
+                xml.Load(designerFile);
+                var xPath = "/*[local-name()='MetaDataObject']/*[local-name()='Configuration']/*[local-name()='Properties']/*[local-name()='Name']";
+                return xml.SelectSingleNode(xPath)?.InnerText ?? string.Empty;
+            }
+
+            var edtRoot = EdtLayout.FindSourcesRoot(path);
+            if (edtRoot != null)
+                return EdtLayout.ConfigurationName(Path.Combine(edtRoot, "Configuration", "Configuration.mdo"));
+
+            return string.Empty;
         }
 
         public T CreateRequest<T>() where T : RDbgBaseRequest, new()
