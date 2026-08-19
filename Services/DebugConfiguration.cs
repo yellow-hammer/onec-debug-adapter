@@ -31,7 +31,7 @@ namespace Onec.DebugAdapter.Services
         private readonly Dictionary<string, string> _extensions = new();
         public IReadOnlyDictionary<string, string> Extensions => _extensions;
 
-        // Каталоги исходников внешних обработок/отчётов (по одному на артефакт).
+        // Описания внешних обработок и отчётов: <Имя>.xml или <Имя>.mdo, по одному на артефакт.
         private readonly List<string> _externalSources = new();
         public IReadOnlyList<string> ExternalSources => _externalSources;
 
@@ -64,22 +64,14 @@ namespace Onec.DebugAdapter.Services
                         _externalBuildFiles.TryAdd(Path.GetFileNameWithoutExtension(file), Path.GetFullPath(file));
         }
 
-        // Путь из конфигурации запуска может указывать и на каталог артефакта (содержит <Имя>.xml),
-        // и на корень с несколькими артефактами — раскладываем до каталогов артефактов.
         private void InitExternalSources(Dictionary<string, JToken> arguments, string key)
         {
             var paths = arguments.GetValueAsStringArray(key);
             if (paths == null)
                 return;
 
-            foreach (var path in paths.Where(Directory.Exists))
-            {
-                if (File.Exists(Path.Combine(path, Path.GetFileName(path.TrimEnd('\\', '/')) + ".xml")))
-                    _externalSources.Add(path);
-                else
-                    _externalSources.AddRange(Directory.EnumerateDirectories(path)
-                        .Where(dir => File.Exists(Path.Combine(dir, Path.GetFileName(dir) + ".xml"))));
-            }
+            foreach (var path in paths)
+                _externalSources.AddRange(ExternalArtifacts.Descriptors(path));
         }
         public DebugTargetType[] InitialTargetTypes { get; private set; } = System.Array.Empty<DebugTargetType>();
 
@@ -225,21 +217,39 @@ namespace Onec.DebugAdapter.Services
         private void InitExtension(Dictionary<string, JToken> arguments)
         {
             var paths = arguments.GetValueAsStringArray("extensions");
+            if (paths == null)
+                return;
 
-            if (paths != null)
+            foreach (var path in paths)
             {
-                foreach (var path in paths)
+                var extensionName = ExtensionName(path);
+                if (string.IsNullOrEmpty(extensionName))
                 {
-                    var xml = new XmlDocument();
-                    xml.Load(Path.Join(path, "Configuration.xml"));
-
-                    var xPath = "/*[local-name()='MetaDataObject']/*[local-name()='Configuration']/*[local-name()='Properties']/*[local-name()='Name']";
-                    var extensionName = xml.SelectSingleNode(xPath)?.InnerText;
-
-                    if (!string.IsNullOrEmpty(extensionName))
-                        _extensions.Add(extensionName, path);
+                    Log.Debug($"расширение «{path}» пропущено: исходного кода расширения там нет");
+                    continue;
                 }
+
+                _extensions[extensionName] = path;
             }
+        }
+
+        /// <summary>Имя расширения из его исходного кода; пусто - каталог не содержит расширения.</summary>
+        private static string ExtensionName(string path)
+        {
+            var designerFile = Path.Join(path, "Configuration.xml");
+            if (File.Exists(designerFile))
+            {
+                var xml = new XmlDocument();
+                xml.Load(designerFile);
+                var xPath = "/*[local-name()='MetaDataObject']/*[local-name()='Configuration']/*[local-name()='Properties']/*[local-name()='Name']";
+                return xml.SelectSingleNode(xPath)?.InnerText ?? string.Empty;
+            }
+
+            var edtRoot = EdtLayout.FindSourcesRoot(path);
+            if (edtRoot != null)
+                return EdtLayout.ConfigurationName(Path.Combine(edtRoot, "Configuration", "Configuration.mdo"));
+
+            return string.Empty;
         }
 
         public T CreateRequest<T>() where T : RDbgBaseRequest, new()
