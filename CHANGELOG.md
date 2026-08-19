@@ -5,6 +5,14 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 и этот проект придерживается [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.3.1] - 2026-08-19
+
+
+### Исправления
+
+- **debug:** Сохранили стек вызовов при кадре Выполнить
+
+
 ## [0.3.0] - 2026-08-19
 
 
