@@ -70,6 +70,17 @@ namespace Onec.DebugAdapter.Tests
             var info = provider.ModuleInfoByPath(objectModule);
 
             Assert.Equal(objectModule, provider.ModulePathByInfo(info.Extension, info.ObjectId, info.PropertyId));
+            Assert.Equal(objectModule, provider.TryModulePathByInfo(info.Extension, info.ObjectId, info.PropertyId));
+        }
+
+        [Fact]
+        public async Task НеизвестныйМодульНеБросаетВTry()
+        {
+            var provider = await CacheFor(Fixture("edt"));
+
+            Assert.Null(provider.TryModulePathByInfo("", "00000000-0000-0000-0000-000000000000", "11111111-1111-1111-1111-111111111111"));
+            Assert.Throws<KeyNotFoundException>(() =>
+                provider.ModulePathByInfo("", "00000000-0000-0000-0000-000000000000", "11111111-1111-1111-1111-111111111111"));
         }
 
         [Fact]

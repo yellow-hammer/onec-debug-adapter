@@ -56,7 +56,7 @@ namespace Onec.DebugAdapter.V8
         private static string ToForwardSlashes(string path)
             => path.Trim().Replace('\\', '/').TrimEnd('/');
 
-        public string ModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default)
+        public string? TryModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default)
         {
             var key = (extension, objectId, propertyId);
 
@@ -68,10 +68,12 @@ namespace Onec.DebugAdapter.V8
                 return _clientUsesBackslash ? clientPath.Replace('/', '\\') : clientPath;
             }
 
-            if (_pathsByModuleInfo.TryGetValue(key, out var path))
-                return path;
-            throw new KeyNotFoundException($"Модуль не найден в кэше метаданных: Extension={extension}, ObjectId={objectId}, PropertyId={propertyId}.");
+            return _pathsByModuleInfo.TryGetValue(key, out var path) ? path : null;
         }
+
+        public string ModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default)
+            => TryModulePathByInfo(extension, objectId, propertyId, cancellationToken)
+               ?? throw new KeyNotFoundException($"Модуль не найден в кэше метаданных: Extension={extension}, ObjectId={objectId}, PropertyId={propertyId}.");
 
         public (string Extension, string ObjectId, string PropertyId) ModuleInfoByPath(string path, CancellationToken cancellationToken = default)
         {

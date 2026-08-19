@@ -8,6 +8,11 @@ namespace Onec.DebugAdapter.V8
 
         string ModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Путь к модулю по идентификаторам; null, если модуля нет в кэше (кадр <c>Выполнить</c>, системный модуль).
+        /// </summary>
+        string? TryModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default);
+
         (string Extension, string ObjectId, string PropertyId) ModuleInfoByPath(string path, CancellationToken cancellationToken = default);
 
         bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info);
