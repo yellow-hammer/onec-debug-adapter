@@ -327,27 +327,24 @@ namespace Onec.DebugAdapter.Services
                 await _callStackRequestTasks[args.ThreadId].Task;
             }
 
-            var callStack = _threadsCallStack[args.ThreadId];
+            if (!_threadsCallStack.TryGetValue(args.ThreadId, out var callStack))
+            {
+                return new StackTraceResponse()
+                {
+                    TotalFrames = 0,
+                    StackFrames = new()
+                };
+            }
 
             return new StackTraceResponse()
             {
                 TotalFrames = callStack.Count,
                 StackFrames = callStack.Select((c, index) =>
-                {
-                    return new StackFrame()
-                    {
-                        Id = _frameIdentifiers.Add((args.ThreadId, index)),
-                        Name = $"{c.Presentation.GetUTF8String()} : {c.LineNo}",
-                        Line = (int)(c.LineNo),
-                        Source = new Source()
-                        {
-                            Path = _metadataProvider.ModulePathByInfo(
-                                c.ModuleId.ExtensionName ?? "", 
-                                c.ModuleId.ObjectId, 
-                                c.ModuleId.PropertyId)
-                        }
-                    };
-                }).ToList()
+                    CallStackMapper.ToDapFrame(
+                        _frameIdentifiers.Add((args.ThreadId, index)),
+                        c,
+                        CallStackMapper.ResolveSourcePath(_metadataProvider, c.ModuleId)
+                    )).ToList()
             };
         }
 
@@ -385,9 +382,10 @@ namespace Onec.DebugAdapter.Services
                 true => await Eval(ThreadId, FrameId, Path, ViewInterface),
                 _ => await EvalLocalVariables(ThreadId, FrameId)
             };
-            var result = debuggeeResponse.First();
-
+            var result = debuggeeResponse.FirstOrDefault();
             var response = new VariablesResponse();
+            if (result == null)
+                return response;
 
             // Сервер нередко отдаёт пустой список локальных переменных сразу после останова —
             // повторяем с паузами, затем строим список по исходнику процедуры.
@@ -396,7 +394,7 @@ namespace Onec.DebugAdapter.Services
                 foreach (var delay in _configuration.VariablesRetryDelaysMs)
                 {
                     await Task.Delay(delay, _cancellation);
-                    result = (await EvalLocalVariables(ThreadId, FrameId)).First();
+                    result = (await EvalLocalVariables(ThreadId, FrameId)).FirstOrDefault() ?? result;
                     if (!LocalsEmpty(result))
                         break;
                 }
@@ -809,14 +807,20 @@ namespace Onec.DebugAdapter.Services
         {
             var threadId = _targetsManager.GetThreadId(e.Info.TargetId);
 
-            var stopPoint = e.Info.CallStack.Reverse().First();
-            var requestKey = GetModuleKey(stopPoint.ModuleId);
-            Log.Debug($"останов: модуль type={stopPoint.ModuleId.Type} url=\"{stopPoint.ModuleId.Url}\" obj={stopPoint.ModuleId.ObjectId} prop={stopPoint.ModuleId.PropertyId} строка={stopPoint.LineNo}");
+            var frames = e.Info.CallStack?.Reverse().ToList() ?? [];
+            if (frames.Count > 0)
+            {
+                var stopPoint = frames[0];
+                if (stopPoint.ModuleId != null)
+                    Log.Debug($"останов: модуль type={stopPoint.ModuleId.Type} url=\"{stopPoint.ModuleId.Url}\" obj={stopPoint.ModuleId.ObjectId} prop={stopPoint.ModuleId.PropertyId} строка={stopPoint.LineNo}");
+                else
+                    Log.Debug($"останов: кадр без модуля «{stopPoint.Presentation.GetUTF8String()}» строка={stopPoint.LineNo}");
+            }
 
-            if (e.Info.CallStackSpecified)
+            if (e.Info.CallStackSpecified && frames.Count > 0)
             {
                 _threadsCallStack.TryRemove(threadId, out _);
-                _threadsCallStack.TryAdd(threadId, e.Info.CallStack.Reverse().ToList());
+                _threadsCallStack.TryAdd(threadId, frames);
 
                 if (_callStackRequestTasks.TryGetValue(threadId, out var task))
                 {

@@ -146,9 +146,9 @@ namespace Onec.DebugAdapter.Services
             foreach (var (key, lines) in _measures)
             {
                 // Модули вне исходного кода проекта (например, недоступных расширений) пропускаем.
-                string path;
-                try { path = _metadataProvider.ModulePathByInfo(key.Extension, key.ObjectId, key.PropertyId, _cancellation); }
-                catch { continue; }
+                var path = _metadataProvider.TryModulePathByInfo(key.Extension, key.ObjectId, key.PropertyId, _cancellation);
+                if (path == null)
+                    continue;
 
                 modules.Add(new MeasureModuleResult()
                 {
