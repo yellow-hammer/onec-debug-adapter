@@ -77,6 +77,11 @@ namespace Onec.DebugAdapter.V8
 
         public (string Extension, string ObjectId, string PropertyId) ModuleInfoByPath(string path, CancellationToken cancellationToken = default)
         {
+            var resolved = SourcePath.Resolve(path);
+            if (!string.Equals(resolved, path, StringComparison.Ordinal))
+                Log.Debug($"путь исходника: «{path}» → «{resolved}»");
+            path = resolved;
+
             var normalized = NormalizePath(path);
             if (_modulesInfoByPath.TryGetValue(normalized, out var info))
                 return info;
