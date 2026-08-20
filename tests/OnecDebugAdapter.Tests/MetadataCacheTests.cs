@@ -93,6 +93,32 @@ namespace Onec.DebugAdapter.Tests
         }
 
         [Fact]
+        public async Task GitUriНаходитМодульКонфигуратора()
+        {
+            var provider = await CacheFor(Fixture("designer"));
+            var module = Fixture("designer", "CommonModules", "ГлобальныйОбщийМодуль", "Ext", "Module.bsl");
+            Assert.Equal(provider.ModuleInfoByPath(module), provider.ModuleInfoByPath(SourcePathTests.GitUri(module)));
+        }
+
+        [Fact]
+        public async Task GitUriНаходитМодульEDT()
+        {
+            var provider = await CacheFor(Fixture("edt"));
+            var module = Fixture("edt", "src", "Catalogs", "Справочник1", "ObjectModule.bsl");
+            var form = Fixture("edt", "src", "Catalogs", "Справочник1", "Forms", "ФормаЭлемента", "Module.bsl");
+            Assert.Equal(provider.ModuleInfoByPath(module), provider.ModuleInfoByPath(SourcePathTests.GitUri(module)));
+            Assert.Equal(provider.ModuleInfoByPath(form), provider.ModuleInfoByPath(SourcePathTests.GitUri(form)));
+        }
+
+        [Fact]
+        public async Task GitUriНаходитМодульРасширенияEDT()
+        {
+            var provider = await CacheFor(Fixture("designer"), ("_ДемоРасширение", Fixture("edt")));
+            var module = Fixture("edt", "src", "CommonModules", "ГлобальныйОбщийМодуль", "Module.bsl");
+            Assert.Equal("_ДемоРасширение", provider.ModuleInfoByPath(SourcePathTests.GitUri(module)).Extension);
+        }
+
+        [Fact]
         public async Task РасширениеEDTЧитаетсяКакОтдельныйКорень()
         {
             var provider = await CacheFor(Fixture("designer"), ("_ДемоРасширение", Fixture("edt")));
