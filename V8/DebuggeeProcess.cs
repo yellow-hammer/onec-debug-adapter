@@ -27,6 +27,32 @@ namespace Onec.DebugAdapter.V8
             _configuration = configuration;
         }
 
+        /// <summary>
+        /// Заключает в кавычки значение строки подключения, а не весь ключ.
+        /// </summary>
+        /// <remarks>
+        /// Клиент 1С разбирает командную строку сам и ждёт форму <c>/F"путь"</c>.
+        /// Кавычки вокруг всего токена (<c>"/Fпуть"</c>) он не понимает: путь с
+        /// пробелом обрезается по первому пробелу, и база не открывается.
+        /// Конфигуратор такую форму принимает, тонкий клиент - нет.
+        /// </remarks>
+        /// <param name="connect">Строка подключения из конфигурации запуска.</param>
+        /// <returns>Аргумент командной строки клиента.</returns>
+        internal static string QuoteConnectString(string connect)
+        {
+            var trimmed = (connect ?? "").Trim();
+            if (trimmed.Length < 2)
+                return trimmed;
+
+            var key = trimmed[..2];
+            if (!key.Equals("/F", StringComparison.OrdinalIgnoreCase)
+                && !key.Equals("/S", StringComparison.OrdinalIgnoreCase))
+                return trimmed;
+
+            var value = trimmed[2..].Trim().Trim('"');
+            return value.Length == 0 ? trimmed : $"{key}\"{value}\"";
+        }
+
         public void Run(DebugProtocolClient client)
         {
             _client = client;
@@ -34,7 +60,7 @@ namespace Onec.DebugAdapter.V8
             var connectionString = _configuration.InfoBase.Connect ?? "";
             var arguments = new List<string>
             {
-                connectionString.Contains(' ') ? $"\"{connectionString}\"" : connectionString,
+                QuoteConnectString(connectionString),
                 "/TCOMP -SDC",
                 "/DisableStartupMessages",
                 "/DisplayPerformance",
