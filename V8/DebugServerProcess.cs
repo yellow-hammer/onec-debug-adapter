@@ -102,10 +102,6 @@ namespace Onec.DebugAdapter.V8
 		private void Dispose(bool disposing)
 		{
 			if (_disposedValue) return;
-			if (disposing)
-			{
-				// TODO: освободить управляемое состояние (управляемые объекты)
-			}
 
 			Stop();
 			_disposedValue = true;

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using Onec.DebugAdapter.Extensions;
@@ -7,8 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Onec.DebugAdapter.V8
@@ -129,17 +126,11 @@ namespace Onec.DebugAdapter.V8
         {
             if (!disposedValue)
             {
-                if (disposing)
-                {
-                    // TODO: освободить управляемое состояние (управляемые объекты)
-                }
-
                 Stop();
                 disposedValue = true;
             }
         }
 
-        // TODO: переопределить метод завершения, только если "Dispose(bool disposing)" содержит код для освобождения неуправляемых ресурсов
         ~DebuggeeProcess()
         {
             Dispose(disposing: false);

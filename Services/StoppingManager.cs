@@ -8,9 +8,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -219,7 +216,7 @@ namespace Onec.DebugAdapter.Services
 
                 if (string.Equals(moduleKey, requestedKey, StringComparison.OrdinalIgnoreCase))
                 {
-                    var ids = moduleInfo.BpInfo.Select(_ => System.Threading.Interlocked.Increment(ref _nextBreakpointId)).ToList();
+                    var ids = moduleInfo.BpInfo.Select(_ => Interlocked.Increment(ref _nextBreakpointId)).ToList();
                     _moduleBreakpointIds[moduleKey] = ids;
 
                     var idByLine = moduleInfo.BpInfo

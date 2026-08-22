@@ -5,7 +5,6 @@ using Onec.DebugAdapter.DebugProtocol;
 using Onec.DebugAdapter.DebugServer;
 using Onec.DebugAdapter.Extensions;
 using Onec.DebugAdapter.V8;
-using System.Net.Http.Headers;
 using Exception = System.Exception;
 using Thread = Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages.Thread;
 
