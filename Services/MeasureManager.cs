@@ -136,7 +136,7 @@ namespace Onec.DebugAdapter.Services
                     snapshot = BuildSnapshot();
                 }
 
-                Log.Debug($"замер: получены результаты, модулей в снимке — {snapshot.Modules.Count}");
+                Log.Debug($"замер: получены результаты, модулей в снимке {snapshot.Modules.Count}");
                 _client?.SendEvent(snapshot);
             }
             catch (System.Exception ex)

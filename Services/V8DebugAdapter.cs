@@ -144,7 +144,7 @@ namespace Onec.DebugAdapter.Services
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                Log.Debug($"setBreakpoints: ошибка — {ex.Message}");
+                Log.Debug($"setBreakpoints: ошибка. {ex.Message}");
                 SetProtocolError(responder, $"Ошибка при обработке запроса конфигурации точек останова: {ex.Message}", ex);
             }
         }
@@ -265,6 +265,7 @@ namespace Onec.DebugAdapter.Services
                 await _debugServer.Run(Protocol);
 
             await _debugServerClient.Test(_cancellation);
+            Log.Debug($"сервер отладки: {_configuration.DebugServerHost}:{_configuration.DebugServerPort}");
 
             var response = await _debugServerClient.AttachDebugUI(_configuration.CreateRequest<RdbgAttachDebugUiRequest>(i =>
             {

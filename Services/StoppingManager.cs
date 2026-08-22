@@ -192,7 +192,7 @@ namespace Onec.DebugAdapter.Services
                     // Исполняемой строки ниже не нашлось (хвост модуля) — серверу такую точку не шлём.
                     if (moduleSource != null && !BslModuleAnalyzer.IsLineBreakable(moduleSource, line))
                     {
-                        Log.Debug($"точка {Path.GetFileName(localPath)}:{bp.Line} без исполняемой строки ниже — не отправлена");
+                        Log.Debug($"точка {Path.GetFileName(localPath)}:{bp.Line} не отправлена: ниже нет исполняемой строки");
                         return;
                     }
 
@@ -237,6 +237,7 @@ namespace Onec.DebugAdapter.Services
             foreach (var moduleInfo in modules.Values)
                 request.BpWorkspace.Add(moduleInfo);
 
+            Log.Debug($"точки: запрос из {modules.Count} модулей, {modules.Values.Sum(m => m.BpInfo.Count)} точек");
 
             await _debugServerClient.SetBreakpoints(request);
 

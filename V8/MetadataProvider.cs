@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
 using Onec.DebugAdapter.Services;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Xml;
 using System.Threading.Tasks.Dataflow;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
@@ -133,6 +134,7 @@ namespace Onec.DebugAdapter.V8
 
         internal async Task FillMetadataCache(CancellationToken cancellationToken)
         {
+            var started = Stopwatch.StartNew();
             var blockOptions = new ExecutionDataflowBlockOptions()
             {
                 CancellationToken = cancellationToken,
@@ -256,7 +258,7 @@ namespace Onec.DebugAdapter.V8
                 var buildFile = _configuration.ExternalBuildFile(artifactName);
                 var url = buildFile == null ? "" : "file://" + ToForwardSlashes(buildFile);
                 if (buildFile == null)
-                    Log.Debug($"внешний артефакт «{artifactName}»: собранный файл не найден (externalFilesBuilds) — точки в его модулях работать не будут");
+                    Log.Debug($"внешний артефакт «{artifactName}»: собранного файла нет в externalFilesBuilds, точки в его модулях работать не будут");
 
                 if (descriptor.EndsWith(".mdo", StringComparison.OrdinalIgnoreCase))
                 {
@@ -273,6 +275,9 @@ namespace Onec.DebugAdapter.V8
             await mdReaderBlock.Completion;
             edtReaderBlock.Complete();
             await edtReaderBlock.Completion;
+
+            Log.Debug($"кэш модулей: {_modulesInfoByPath.Count} модулей, из них внешних {_externalModules.Count}"
+                + $", расширений {_configuration.Extensions.Count}, за {started.ElapsedMilliseconds} мс");
         }
 
         public bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info)
