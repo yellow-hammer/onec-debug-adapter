@@ -7,6 +7,8 @@ namespace Onec.DebugAdapter.DebugServer
     {
 		private readonly TaskCompletionSource _tcs = new();
 
+		// Без ThrowOnAnyError: с флагом RestSharp бросает исключение раньше, чем читается
+		// тело ответа, и объяснение сервера теряется. Ошибку разбирает Ensure.
 		private RestClient _client = null!;
 
         public DebugServerClient(IDebugConfiguration configuration)
@@ -15,7 +17,6 @@ namespace Onec.DebugAdapter.DebugServer
             {
 				var options = new RestClientOptions($"http://{configuration.DebugServerHost}:{configuration.DebugServerPort}/e1crdbg")
 				{
-					ThrowOnAnyError = true,
 					UserAgent = "1CV8"
 				};
 
@@ -31,200 +32,116 @@ namespace Onec.DebugAdapter.DebugServer
 			});
         }
 
-        public async Task Test(CancellationToken cancellationToken = default)
+        public Task Test(CancellationToken cancellationToken = default)
+            => Send("test", Rdbg("rdbgTest", "test"), cancellationToken);
+
+        public Task ClearBreakOnNextStatement(RdbgSetBreamOnNextStatementRequest request, CancellationToken cancellationToken = default)
+            => Send("clearBreakOnNextStatement", Body("clearBreakOnNextStatement", request), cancellationToken);
+
+        public Task<RdbgAttachDebugUiResponse?> AttachDebugUI(RdbgAttachDebugUiRequest request, CancellationToken cancellationToken = default)
+            => Send<RdbgAttachDebugUiResponse>("attachDebugUI", Body("attachDebugUI", request), cancellationToken);
+
+        public Task InitSettings(RdbgSetInitialDebugSettingsRequest request, CancellationToken cancellationToken = default)
+            => Send("initSettings", Body("initSettings", request), cancellationToken);
+
+        public Task<RdbgDetachDebugUiResponse?> DetachDebugUI(RdbgDetachDebugUiRequest request, CancellationToken cancellationToken = default)
+            => Send<RdbgDetachDebugUiResponse>("detachDebugUI", Body("detachDebugUI", request), cancellationToken);
+
+        public Task<RdbgsGetDbgTargetsResponse?> GetDbgTargets(RdbgsGetDbgTargetsRequest request, CancellationToken cancellationToken = default)
+            => Send<RdbgsGetDbgTargetsResponse>("getDbgTargets", Body("getDbgTargets", request), cancellationToken);
+
+        public Task SetBreakpoints(RdbgSetBreakpointsRequest request, CancellationToken cancellationToken = default)
+            => Send("setBreakpoints", Body("setBreakpoints", request), cancellationToken);
+
+        public Task SetMeasureMode(RdbgSetMeasureModeRequest request, CancellationToken cancellationToken = default)
+            => Send("setMeasureMode", Body("setMeasureMode", request), cancellationToken);
+
+        public Task SetBreakOnRTE(RdbgSetRunTimeErrorProcessingRequest request, CancellationToken cancellationToken = default)
+            => Send("setBreakOnRTE", Body("setBreakOnRTE", request), cancellationToken);
+
+        public Task<RdbgGetCallStackResponse?> GetCallStack(RdbgGetCallStackRequest request, CancellationToken cancellationToken = default)
+            => Send<RdbgGetCallStackResponse>("getCallStack", Body("getCallStack", request), cancellationToken);
+
+        public Task<RdbgPingDebugUiResponse?> PingDebugUiParams(string dbgUi, CancellationToken cancellationToken = default)
         {
-            await WaitInitialized();
+            var request = Rdbg("rdbg", "pingDebugUIParams");
+            request.AddQueryParameter("dbgui", dbgUi);
 
-			var request = new RestRequest("rdbgTest");
-            request.AddQueryParameter("cmd", "test");
-
-            await _client.PostAsync<RdbgTestRequest>(request, cancellationToken);
+            return Send<RdbgPingDebugUiResponse>("pingDebugUIParams", request, cancellationToken);
         }
 
-        public async Task ClearBreakOnNextStatement(RdbgSetBreamOnNextStatementRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
+        public Task SetAutoAttachSettings(RdbgSetAutoAttachSettingsRequest request, CancellationToken cancellationToken = default)
+            => Send("setAutoAttachSettings", Body("setAutoAttachSettings", request), cancellationToken);
 
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "clearBreakOnNextStatement");
-            restRequest.AddXmlBody(request);
+        public Task<RdbgAttachDetachDbgTargetResponse?> AttachDetachDbgTargets(RdbgAttachDetachDebugTargetsRequest request, CancellationToken cancellationToken = default)
+            => Send<RdbgAttachDetachDbgTargetResponse>("attachDetachDbgTargets", Body("attachDetachDbgTargets", request), cancellationToken);
 
-            await _client.PostAsync<RdbgSetBreamOnNextStatementRequest>(restRequest, cancellationToken);
-        }
+        public Task<RdbgEvalLocalVariablesResponse?> EvalLocalVariables(RdbgEvalLocalVariablesRequest request, CancellationToken cancellationToken = default)
+            => Send<RdbgEvalLocalVariablesResponse>("evalLocalVariables", Body("evalLocalVariables", request), cancellationToken);
 
-        public async Task<RdbgAttachDebugUiResponse?> AttachDebugUI(RdbgAttachDebugUiRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
+        public Task<RdbgEvalExprResponse?> EvalExpr(RdbgEvalExprRequest request, CancellationToken cancellationToken = default)
+            => Send<RdbgEvalExprResponse>("evalExpr", Body("evalExpr", request), cancellationToken);
 
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "attachDebugUI");
-            restRequest.AddXmlBody(request);
+        public Task ModifyValue(RdbgModifyValueRequest request, CancellationToken cancellationToken = default)
+            => Send("modifyValue", Body("modifyValue", request), cancellationToken);
 
-            return await _client.PostAsync<RdbgAttachDebugUiResponse>(restRequest, cancellationToken);
-        }
-
-        public async Task InitSettings(RdbgSetInitialDebugSettingsRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "initSettings");
-            restRequest.AddXmlBody(request);
-
-            await _client.PostAsync(restRequest, cancellationToken);
-        }
-
-        public async Task<RdbgDetachDebugUiResponse?> DetachDebugUI(RdbgDetachDebugUiRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "detachDebugUI");
-            restRequest.AddXmlBody(request);
-
-            return await _client.PostAsync<RdbgDetachDebugUiResponse>(restRequest, cancellationToken);
-        }
-
-        public async Task<RdbgsGetDbgTargetsResponse?> GetDbgTargets(RdbgsGetDbgTargetsRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "getDbgTargets");
-            restRequest.AddXmlBody(request);
-
-            return await _client.PostAsync<RdbgsGetDbgTargetsResponse>(restRequest, cancellationToken);
-        }
-
-        public async Task SetBreakpoints(RdbgSetBreakpointsRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "setBreakpoints");
-            restRequest.AddXmlBody(request);
-
-            // Текст ошибки сервер кладёт в тело ответа — пробрасываем его, а не голый код статуса.
-            var response = await _client.ExecutePostAsync(restRequest, cancellationToken);
-            if (!response.IsSuccessful)
-                throw new InvalidOperationException(
-                    $"setBreakpoints: {(int)response.StatusCode} {response.StatusDescription}. {response.Content}".Trim());
-        }
-
-        public async Task SetMeasureMode(RdbgSetMeasureModeRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "setMeasureMode");
-            restRequest.AddXmlBody(request);
-
-            await _client.PostAsync(restRequest, cancellationToken);
-        }
-
-        public async Task SetBreakOnRTE(RdbgSetRunTimeErrorProcessingRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "setBreakOnRTE");
-            restRequest.AddXmlBody(request);
-
-            await _client.PostAsync(restRequest, cancellationToken);
-        }
-
-        public async Task<RdbgGetCallStackResponse?> GetCallStack(RdbgGetCallStackRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "getCallStack");
-            restRequest.AddXmlBody(request);
-
-            return await _client.PostAsync<RdbgGetCallStackResponse>(restRequest, cancellationToken);
-        }
-
-        public async Task<RdbgPingDebugUiResponse?> PingDebugUiParams(string dbgUi, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "pingDebugUIParams");
-            restRequest.AddQueryParameter("dbgui", dbgUi);
-
-            return await _client.PostAsync<RdbgPingDebugUiResponse>(restRequest, cancellationToken);
-        }
-
-        public async Task SetAutoAttachSettings(RdbgSetAutoAttachSettingsRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "setAutoAttachSettings");
-            restRequest.AddXmlBody(request);
-
-            await _client.PostAsync<RdbgSetAutoAttachSettingsRequest>(restRequest, cancellationToken);
-        }
-
-        public async Task<RdbgAttachDetachDbgTargetResponse?> AttachDetachDbgTargets(RdbgAttachDetachDebugTargetsRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "attachDetachDbgTargets");
-            restRequest.AddXmlBody(request);
-
-            return await _client.PostAsync<RdbgAttachDetachDbgTargetResponse>(restRequest, cancellationToken);
-        }
-
-        public async Task<RdbgEvalLocalVariablesResponse?> EvalLocalVariables(RdbgEvalLocalVariablesRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "evalLocalVariables");
-            restRequest.AddXmlBody(request);
-
-            return await _client.PostAsync<RdbgEvalLocalVariablesResponse>(restRequest, cancellationToken);
-        }
-
-        public async Task<RdbgEvalExprResponse?> EvalExpr(RdbgEvalExprRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "evalExpr");
-            restRequest.AddXmlBody(request);
-
-            return await _client.PostAsync<RdbgEvalExprResponse>(restRequest, cancellationToken);
-        }
-
-        public async Task ModifyValue(RdbgModifyValueRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "modifyValue");
-            restRequest.AddXmlBody(request);
-
-            await _client.PostAsync(restRequest, cancellationToken);
-        }
-
-        public async Task<RdbgStepResponse?> Step(RdbgStepRequest request, CancellationToken cancellationToken = default)
-        {
-			await WaitInitialized();
-
-			var restRequest = new RestRequest("rdbg");
-            restRequest.AddQueryParameter("cmd", "step");
-            restRequest.AddXmlBody(request);
-
-            return await _client.PostAsync<RdbgStepResponse>(restRequest, cancellationToken);
-        }
+        public Task<RdbgStepResponse?> Step(RdbgStepRequest request, CancellationToken cancellationToken = default)
+            => Send<RdbgStepResponse>("step", Body("step", request), cancellationToken);
 
         public void Dispose()
         {
             _client?.Dispose();
             GC.SuppressFinalize(this);
+        }
+
+        private static RestRequest Rdbg(string resource, string command)
+        {
+            var request = new RestRequest(resource);
+            request.AddQueryParameter("cmd", command);
+            return request;
+        }
+
+        private static RestRequest Body(string command, object body)
+        {
+            var request = Rdbg("rdbg", command);
+            request.AddXmlBody(body);
+            return request;
+        }
+
+        private async Task Send(string command, RestRequest request, CancellationToken cancellationToken)
+        {
+            await WaitInitialized();
+            Ensure(command, await _client.ExecutePostAsync(request, cancellationToken), cancellationToken);
+        }
+
+        private async Task<T?> Send<T>(string command, RestRequest request, CancellationToken cancellationToken)
+        {
+            await WaitInitialized();
+
+            var response = await _client.ExecutePostAsync<T>(request, cancellationToken);
+            Ensure(command, response, cancellationToken);
+
+            return response.Data;
+        }
+
+        /// <summary>
+        /// Причину отказа сервер объясняет в теле ответа, поэтому в сообщение идут и команда,
+        /// и статус, и тело. Без этого в журнал попадает голое «Request failed with status code».
+        /// </summary>
+        internal static void Ensure(string command, RestResponse response, CancellationToken cancellationToken)
+        {
+            // Отмена сессии закрывает запросы на полпути: это не отказ сервера.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Код считаем сами: IsSuccessStatusCode у RestSharp заполняется при разборе ответа,
+            // а не выводится из статуса.
+            var status = (int)response.StatusCode;
+            if (status != 0 && (status < 200 || status > 299))
+                throw new InvalidOperationException(
+                    $"{command}: {status} {response.StatusDescription}. {response.Content}".Trim());
+
+            if (response.ErrorException != null)
+                throw new InvalidOperationException($"{command}: {response.ErrorException.Message}", response.ErrorException);
         }
 
         private async Task WaitInitialized()

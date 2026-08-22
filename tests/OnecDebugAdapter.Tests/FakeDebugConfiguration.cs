@@ -10,7 +10,8 @@ namespace Onec.DebugAdapter.Tests
         string rootProject,
         (string Name, string Path)[] extensions,
         IReadOnlyList<string>? externalSources = null,
-        Func<string, string?>? externalBuildFile = null) : IDebugConfiguration
+        Func<string, string?>? externalBuildFile = null,
+        int debugServerPort = 1550) : IDebugConfiguration
     {
         public Task Initialization => Task.CompletedTask;
         public InfoBaseItem InfoBase => new("test", new Dictionary<string, string?>());
@@ -19,7 +20,7 @@ namespace Onec.DebugAdapter.Tests
         public string PlatformBin => string.Empty;
         public string DebuggerID => "test";
         public string DebugServerHost => "localhost";
-        public int DebugServerPort => 1550;
+        public int DebugServerPort => debugServerPort;
         public string RootProject => rootProject;
         public IReadOnlyDictionary<string, string> Extensions => extensions.ToDictionary(item => item.Name, item => item.Path);
         public IReadOnlyList<string> ExternalSources => externalSources ?? [];
