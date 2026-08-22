@@ -114,10 +114,10 @@ namespace Onec.DebugAdapter.Tests
             Assert.Equal([4, 13], module.BpInfo.Select(b => (int)b.Line));
         }
 
-        private static (StoppingManager Manager, StubClient Client) Manager()
+        private static (StoppingManager Manager, FakeDebugServerClient Client) Manager()
         {
-            var client = new StubClient();
-            var manager = new StoppingManager(new FakeDebugConfiguration(string.Empty, []), new StubMetadata(), client, new StubListener(), new StubTargets());
+            var client = new FakeDebugServerClient();
+            var manager = new StoppingManager(new FakeDebugConfiguration(string.Empty, []), new StubMetadata(), client, new FakeDebugServerListener(), new FakeDebugTargetsManager());
             return (manager, client);
         }
 
@@ -146,69 +146,6 @@ namespace Onec.DebugAdapter.Tests
             public string? LocalModulePath((string Extension, string ObjectId, string PropertyId) info) => FirstPath;
             public IEnumerable<(string Extension, string ObjectId, string PropertyId)> ExtensionCounterparts((string Extension, string ObjectId, string PropertyId) info)
                 => [];
-        }
-
-        private sealed class StubClient : IDebugServerClient
-        {
-            public RdbgSetBreakpointsRequest? LastRequest { get; private set; }
-
-            public Task SetBreakpoints(RdbgSetBreakpointsRequest request, CancellationToken cancellationToken = default)
-            {
-                LastRequest = request;
-                return Task.CompletedTask;
-            }
-
-            public void Dispose() { }
-            public Task ClearBreakOnNextStatement(RdbgSetBreamOnNextStatementRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgAttachDebugUiResponse?> AttachDebugUI(RdbgAttachDebugUiRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgAttachDetachDbgTargetResponse?> AttachDetachDbgTargets(RdbgAttachDetachDebugTargetsRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgDetachDebugUiResponse?> DetachDebugUI(RdbgDetachDebugUiRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgEvalLocalVariablesResponse?> EvalLocalVariables(RdbgEvalLocalVariablesRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgEvalExprResponse?> EvalExpr(RdbgEvalExprRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task ModifyValue(RdbgModifyValueRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgGetCallStackResponse?> GetCallStack(RdbgGetCallStackRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgsGetDbgTargetsResponse?> GetDbgTargets(RdbgsGetDbgTargetsRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task InitSettings(RdbgSetInitialDebugSettingsRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgPingDebugUiResponse?> PingDebugUiParams(string dbgUi, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task SetAutoAttachSettings(RdbgSetAutoAttachSettingsRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task SetBreakOnRTE(RdbgSetRunTimeErrorProcessingRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task SetMeasureMode(RdbgSetMeasureModeRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task<RdbgStepResponse?> Step(RdbgStepRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public Task Test(CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        }
-
-        private sealed class StubListener : IDebugServerListener
-        {
-#pragma warning disable CS0067
-            public event EventHandler<CallStackFormedEventArgs>? CallStackFormed;
-            public event EventHandler<DebugTargetEventArgs>? DebugTargetEvent;
-            public event EventHandler<ExpressionEvaluatedEventArgs>? ExpressionEvaluated;
-            public event EventHandler<RuntimeExceptionArgs>? RuntimeException;
-            public event EventHandler<CorrectedBreakpointsArgs>? CorrectedBreakpoints;
-            public event EventHandler<SetForegroundHelperArgs>? SetForegroundHelper;
-            public event EventHandler<ForegroundHelperRequestArgs>? ForegroundHelperRequested;
-            public event EventHandler<ProcessForegroundHelperArgs>? ProcessForegroundHelper;
-            public event EventHandler<ShowMetadataObjectArgs>? ShowMetadataObject;
-            public event EventHandler<MeasureResultsEventArgs>? MeasureResults;
-#pragma warning restore CS0067
-
-            public void Run(DebugProtocolClient debugProtocolClient, CancellationToken cancellationToken) { }
-            public void Stop() { }
-        }
-
-        private sealed class StubTargets : IDebugTargetsManager
-        {
-            public Task Run(DebugProtocolClient client, CancellationToken cancellationToken) => Task.CompletedTask;
-            public DebugTargetId GetTargetId(int threadId) => throw new NotSupportedException();
-            public DebugTargetId[] GetAttachedDebugTargets() => [];
-            public Task<DebugTargetId[]> GetDebugTargets() => Task.FromResult<DebugTargetId[]>([]);
-            public Task SetAutoAttachTargetTypes(List<DebugTargetType> types) => Task.CompletedTask;
-            public List<DebugTargetType> GetAutoAttachTargetTypes() => [];
-            public Task AttachDebugTargets(List<DebugTargetId> debugTargets) => Task.CompletedTask;
-            public Task DetachDebugTargets(List<DebugTargetIdLight> debugTargets, bool sendDetachRequest) => Task.CompletedTask;
-            public ThreadsResponse GetThreads(ThreadsArguments args) => throw new NotSupportedException();
-            public int GetThreadId(DebugTargetIdLight debugTargetId) => 0;
-            public bool DebugTargetAttached(DebugTargetIdLight debugTarget) => false;
         }
     }
 }

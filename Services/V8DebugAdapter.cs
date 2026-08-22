@@ -329,6 +329,8 @@ namespace Onec.DebugAdapter.Services
                 request.TargetId = _debugTargetsManager.GetTargetId(threadId).ToLight();
                 request.Action = action;
 
+                // Отметка до отправки: запрос значений может прийти, пока шаг ещё в пути.
+                _stoppingManager.ThreadResumed(threadId);
                 var response = await _debugServerClient.Step(request, _cancellation);
 
                 if (response?.ItemSpecified == true)
@@ -341,6 +343,7 @@ namespace Onec.DebugAdapter.Services
                             switch (item.State)
                             {
                                 case DbgTargetState.Worked:
+                                    _stoppingManager.ThreadResumed(itemThreadId);
                                     Protocol.SendEvent(new ContinuedEvent()
                                     {
                                         ThreadId = itemThreadId,

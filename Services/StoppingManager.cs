@@ -30,6 +30,9 @@ namespace Onec.DebugAdapter.Services
 
         private readonly ConcurrentDictionary<int, TaskCompletionSource> _callStackRequestTasks = new();
         private readonly ConcurrentDictionary<int, List<StackItemViewInfoData>> _threadsCallStack = new();
+        // Потоки, которым отправлен шаг или продолжение: пока предмет отладки снова не остановился,
+        // сервер отвечает на вычисления отказом.
+        private readonly ConcurrentDictionary<int, bool> _resumedThreads = new();
         private readonly References<(int ThreadId, int FrameId)> _frameIdentifiers = new();
 
         private readonly ConcurrentDictionary<string, TaskCompletionSource<List<CalculationResultBaseData>>> _evaluationTasks = new();
@@ -234,6 +237,7 @@ namespace Onec.DebugAdapter.Services
             foreach (var moduleInfo in modules.Values)
                 request.BpWorkspace.Add(moduleInfo);
 
+
             await _debugServerClient.SetBreakpoints(request);
 
             return debuggerResponse;
@@ -370,12 +374,22 @@ namespace Onec.DebugAdapter.Services
             };
         }
 
-        public void ClearStackFrameInfo(int threadId)
+        /// <summary>
+        /// Предмету отладки отправлен шаг или продолжение. Отметка снимается на следующем останове.
+        /// </summary>
+        public void ThreadResumed(int threadId) => _resumedThreads[threadId] = true;
+
+        /// <summary>
+        /// Выполнение продолжено. Запрос значений мог уйти раньше и получить отказ уже на ходу:
+        /// такой отказ не ошибка сессии.
+        /// </summary>
+        private bool Resumed(int threadId)
         {
-            _callStackRequestTasks.TryRemove(threadId, out _);
-            _threadsCallStack.TryRemove(threadId, out _);
-            _frameIdentifiers.Clear(item => item.ThreadId == threadId);
-            _variableIdentifiers.Clear(item => item.ThreadId == threadId);
+            if (!_resumedThreads.ContainsKey(threadId))
+                return false;
+
+            Log.Debug($"переменные потока {threadId} не получены: выполнение продолжено");
+            return true;
         }
 
         public ScopesResponse GetScopes(ScopesArguments args)
@@ -399,13 +413,24 @@ namespace Onec.DebugAdapter.Services
         {
             (int ThreadId, int FrameId, List<SourceCalculationDataItem> Path, ViewInterface ViewInterface) = _variableIdentifiers.Get(args.VariablesReference);
 
-            var debuggeeResponse = (Path.Count > 0) switch
-            {
-                true => await Eval(ThreadId, FrameId, Path, ViewInterface),
-                _ => await EvalLocalVariables(ThreadId, FrameId)
-            };
-            var result = debuggeeResponse.FirstOrDefault();
             var response = new VariablesResponse();
+            // Значения сервер отдаёт только остановленному предмету отладки.
+            if (Resumed(ThreadId))
+                return response;
+
+            List<CalculationResultBaseData> debuggeeResponse;
+            try
+            {
+                debuggeeResponse = Path.Count > 0
+                    ? await Eval(ThreadId, FrameId, Path, ViewInterface)
+                    : await EvalLocalVariables(ThreadId, FrameId);
+            }
+            catch (System.Exception) when (Resumed(ThreadId))
+            {
+                return response;
+            }
+
+            var result = debuggeeResponse.FirstOrDefault();
             if (result == null)
                 return response;
 
@@ -416,7 +441,18 @@ namespace Onec.DebugAdapter.Services
                 foreach (var delay in _configuration.VariablesRetryDelaysMs)
                 {
                     await Task.Delay(delay, _cancellation);
-                    result = (await EvalLocalVariables(ThreadId, FrameId)).FirstOrDefault() ?? result;
+                    if (Resumed(ThreadId))
+                        return response;
+
+                    try
+                    {
+                        result = (await EvalLocalVariables(ThreadId, FrameId)).FirstOrDefault() ?? result;
+                    }
+                    catch (System.Exception) when (Resumed(ThreadId))
+                    {
+                        return response;
+                    }
+
                     if (!LocalsEmpty(result))
                         break;
                 }
@@ -858,12 +894,16 @@ namespace Onec.DebugAdapter.Services
 
             if (e.Info.SendMessageOnly == true)
             {
+                // Точка с выводом сообщения: предмет отладки сразу идёт дальше.
+                ThreadResumed(threadId);
                 await ContinueDebugTarget(e.Info.TargetId);
                 return;
             }
 
             if (e.Info.SendHitCounterOnly)
                 return;
+
+            _resumedThreads.TryRemove(threadId, out _);
 
             if (e.Info.StopByBp == true || e.Info.SuspendedByOther)
                 _client.SendEvent(new StoppedEvent()
