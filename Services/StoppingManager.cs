@@ -8,9 +8,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,17 +27,22 @@ namespace Onec.DebugAdapter.Services
 
         private readonly ConcurrentDictionary<int, TaskCompletionSource> _callStackRequestTasks = new();
         private readonly ConcurrentDictionary<int, List<StackItemViewInfoData>> _threadsCallStack = new();
+        // Потоки, которым отправлен шаг или продолжение: пока предмет отладки снова не остановился,
+        // сервер отвечает на вычисления отказом.
+        private readonly ConcurrentDictionary<int, bool> _resumedThreads = new();
         private readonly References<(int ThreadId, int FrameId)> _frameIdentifiers = new();
 
         private readonly ConcurrentDictionary<string, TaskCompletionSource<List<CalculationResultBaseData>>> _evaluationTasks = new();
         private readonly References<(int ThreadId, int FrameId, List<SourceCalculationDataItem> Path, ViewInterface Interface)> _variableIdentifiers = new();
 
-        private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), SetBreakpointsArguments> _moduleSetBreakpointsArguments = new();
+        // Ключ — путь исходника: у копий внешних обработок тройка идентификаторов общая,
+        // и точки второй копии вытесняли бы точки первой.
+        private readonly ConcurrentDictionary<string, SetBreakpointsArguments> _moduleSetBreakpointsArguments = new(StringComparer.OrdinalIgnoreCase);
         // Запросы точек идут подряд (правка точки в редакторе порождает быструю пару запросов) —
         // конкурентные setBreakpoints сервер отвергает.
         private readonly SemaphoreSlim _setBreakpointsLock = new(1, 1);
-        // Идентификаторы DAP-точек по модулю (в порядке BpInfo) — для адресного применения correctedBP.
-        private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), List<int>> _moduleBreakpointIds = new();
+        // Идентификаторы DAP-точек по исходнику (в порядке BpInfo) — для адресного применения correctedBP.
+        private readonly ConcurrentDictionary<string, List<int>> _moduleBreakpointIds = new(StringComparer.OrdinalIgnoreCase);
         private int _nextBreakpointId = 1;
 
         public StoppingManager(
@@ -73,7 +75,12 @@ namespace Onec.DebugAdapter.Services
         {
             foreach (var module in e.Info.BpWorkspace)
             {
-                var key = GetModuleKey(module.Id);
+                var correctedPath = CallStackMapper.ResolveSourcePath(_metadataProvider, module.Id);
+                Log.Debug($"коррекция точек: url=\"{module.Id?.Url}\" obj={module.Id?.ObjectId} prop={module.Id?.PropertyId} исходник={(correctedPath == null ? "не сопоставлен" : Path.GetFileName(correctedPath))}");
+                if (correctedPath == null)
+                    continue;
+
+                var key = SourcePath.Canonical(correctedPath);
                 if (!_moduleSetBreakpointsArguments.TryGetValue(key, out var args))
                     continue;
                 if (!_moduleBreakpointIds.TryGetValue(key, out var ids))
@@ -118,16 +125,18 @@ namespace Onec.DebugAdapter.Services
         {
             var debuggerResponse = new SetBreakpointsResponse();
 
-            var requestedModule = _metadataProvider.ModuleInfoByPath(args.Source.Path.CapitalizeFirstChar());
-            _moduleSetBreakpointsArguments.TryRemove((requestedModule.Extension, requestedModule.ObjectId, requestedModule.PropertyId), out _);
-            _moduleSetBreakpointsArguments.TryAdd((requestedModule.Extension, requestedModule.ObjectId, requestedModule.PropertyId), args);
+            var requestedKey = SourcePath.Canonical(args.Source.Path.CapitalizeFirstChar());
+            _moduleSetBreakpointsArguments[requestedKey] = args;
 
             var request = _configuration.CreateRequest<RdbgSetBreakpointsRequest>();
-            var modules = new Dictionary<(string Extension, string ObjectId, string PropertyId), ModuleBpInfoInternal>();
+            // Внешние модули различаются URL собранного файла: тройка идентификаторов
+            // у копий обработок совпадает, и в запрос уходила бы одна из них.
+            var modules = new Dictionary<(string Extension, string ObjectId, string PropertyId, string Url), ModuleBpInfoInternal>();
 
-            _moduleSetBreakpointsArguments.Select(c => c.Value).ToList().ForEach(cArgs =>
+            foreach (var (moduleKey, cArgs) in _moduleSetBreakpointsArguments.ToList())
             {
-                var (extension, objectId, propertyId) = _metadataProvider.ModuleInfoByPath(cArgs.Source.Path.CapitalizeFirstChar());
+                var sourcePath = cArgs.Source.Path.CapitalizeFirstChar();
+                var (extension, objectId, propertyId) = _metadataProvider.ModuleInfoByPath(sourcePath);
 
                 var moduleInfo = new ModuleBpInfoInternal()
                 {
@@ -139,23 +148,33 @@ namespace Onec.DebugAdapter.Services
                     }
                 };
                 var includeInRequest = true;
-                if (_metadataProvider.IsExternalModule((extension, objectId, propertyId)))
+                var isExternal = _metadataProvider.IsExternalModule((extension, objectId, propertyId));
+                if (isExternal)
                 {
                     // Сервер адресует внешние модули по URL собранного файла; без него запрос
-                    // отвергается целиком (BadRequest) — такой модуль не отправляем вовсе.
-                    var url = _metadataProvider.ExternalModuleUrl((extension, objectId, propertyId));
+                    // отвергается целиком, поэтому такой модуль не отправляем вовсе.
+                    // У копий обработок uuid общий, значит URL уточняем по пути исходника.
+                    // Путь может не сопоставиться (другая машина, Git-URI), тогда остаётся
+                    // поиск по тройке идентификаторов.
+                    var url = _metadataProvider.ExternalModuleUrlByPath(sourcePath);
+                    if (url.Length == 0)
+                        url = _metadataProvider.ExternalModuleUrl((extension, objectId, propertyId));
                     moduleInfo.Id.Type = BslModuleType.ExtMdModule;
                     moduleInfo.Id.Url = url;
                     includeInRequest = url.Length > 0;
                 }
                 else if (!string.IsNullOrEmpty(extension))
                     moduleInfo.Id.Type = BslModuleType.ExtensionModule;
-                Log.Debug($"точки: модуль type={moduleInfo.Id.Type} url=\"{moduleInfo.Id.Url}\" obj={objectId} prop={propertyId} строки=[{string.Join(",", cArgs.Breakpoints.Select(b => b.Line))}]{(includeInRequest ? "" : " — пропущен (нет собранного файла)")}");
+                Log.Debug($"точки: модуль type={moduleInfo.Id.Type} url=\"{moduleInfo.Id.Url}\" obj={objectId} prop={propertyId} строки=[{string.Join(",", cArgs.Breakpoints.Select(b => b.Line))}]{(includeInRequest ? "" : ", пропущен: нет собранного файла")}");
 
                 // Точка на неисполняемой строке (комментарий, директива, препроцессор) молча не работает —
                 // сдвигаем до исполняемой; VS Code подвинет маркер по строке из ответа.
                 string? moduleSource = null;
+                // У копий обработок обратный поиск по тройке идентификаторов даёт файл соседней,
+                // поэтому исходник внешнего модуля читаем по пути из запроса.
                 var localPath = _metadataProvider.LocalModulePath((extension, objectId, propertyId));
+                if (isExternal && File.Exists(sourcePath))
+                    localPath = sourcePath;
                 if (localPath != null)
                     try { moduleSource = File.ReadAllText(localPath); } catch { /* без исходника — без сдвига */ }
 
@@ -170,7 +189,7 @@ namespace Onec.DebugAdapter.Services
                     // Исполняемой строки ниже не нашлось (хвост модуля) — серверу такую точку не шлём.
                     if (moduleSource != null && !BslModuleAnalyzer.IsLineBreakable(moduleSource, line))
                     {
-                        Log.Debug($"точка {Path.GetFileName(localPath)}:{bp.Line} без исполняемой строки ниже — не отправлена");
+                        Log.Debug($"точка {Path.GetFileName(localPath)}:{bp.Line} не отправлена: ниже нет исполняемой строки");
                         return;
                     }
 
@@ -193,12 +212,12 @@ namespace Onec.DebugAdapter.Services
                 });
 
                 if (includeInRequest)
-                    modules[(extension, objectId, propertyId)] = moduleInfo;
+                    modules[(extension, objectId, propertyId, moduleInfo.Id.Url ?? "")] = moduleInfo;
 
-                if (requestedModule == (extension, objectId, propertyId))
+                if (string.Equals(moduleKey, requestedKey, StringComparison.OrdinalIgnoreCase))
                 {
-                    var ids = moduleInfo.BpInfo.Select(_ => System.Threading.Interlocked.Increment(ref _nextBreakpointId)).ToList();
-                    _moduleBreakpointIds[(extension, objectId, propertyId)] = ids;
+                    var ids = moduleInfo.BpInfo.Select(_ => Interlocked.Increment(ref _nextBreakpointId)).ToList();
+                    _moduleBreakpointIds[moduleKey] = ids;
 
                     var idByLine = moduleInfo.BpInfo
                         .Select((c, i) => (Line: (int)c.Line, Id: ids[i]))
@@ -208,12 +227,14 @@ namespace Onec.DebugAdapter.Services
                         ? new Breakpoint() { Id = id, Line = line, Source = args.Source, Verified = includeInRequest }
                         : new Breakpoint() { Line = line, Source = args.Source, Verified = false }).ToList();
                 }
-            });
+            }
 
             MirrorBreakpointsToExtensions(modules);
 
             foreach (var moduleInfo in modules.Values)
                 request.BpWorkspace.Add(moduleInfo);
+
+            Log.Debug($"точки: запрос из {modules.Count} модулей, {modules.Values.Sum(m => m.BpInfo.Count)} точек");
 
             await _debugServerClient.SetBreakpoints(request);
 
@@ -224,10 +245,11 @@ namespace Onec.DebugAdapter.Services
         /// Дублирует точки базовой конфигурации в процедуры-заместители расширений: при «Вместо»/
         /// «ИзменениеИКонтроль» базовый код не выполняется и точка без зеркала молча не срабатывает.
         /// </summary>
-        private void MirrorBreakpointsToExtensions(Dictionary<(string Extension, string ObjectId, string PropertyId), ModuleBpInfoInternal> modules)
+        private void MirrorBreakpointsToExtensions(Dictionary<(string Extension, string ObjectId, string PropertyId, string Url), ModuleBpInfoInternal> modules)
         {
-            foreach (var (info, moduleInfo) in modules.ToList())
+            foreach (var (key, moduleInfo) in modules.ToList())
             {
+                var info = (key.Extension, key.ObjectId, key.PropertyId);
                 if (info.Extension.Length > 0 || _metadataProvider.IsExternalModule(info))
                     continue;
 
@@ -247,13 +269,15 @@ namespace Onec.DebugAdapter.Services
                     try { extensionContent = File.ReadAllText(extensionPath); }
                     catch { continue; }
 
+                    var counterpartKey = (counterpart.Extension, counterpart.ObjectId, counterpart.PropertyId, "");
+
                     foreach (var bp in moduleInfo.BpInfo.ToList())
                     {
                         var mappedLines = BslModuleAnalyzer.MapBaseLineToExtensionLines(baseContent, (int)bp.Line, extensionContent);
                         if (mappedLines.Count == 0)
                             continue;
 
-                        if (!modules.TryGetValue(counterpart, out var extensionModule))
+                        if (!modules.TryGetValue(counterpartKey, out var extensionModule))
                         {
                             extensionModule = new ModuleBpInfoInternal()
                             {
@@ -265,7 +289,7 @@ namespace Onec.DebugAdapter.Services
                                     Type = BslModuleType.ExtensionModule
                                 }
                             };
-                            modules[counterpart] = extensionModule;
+                            modules[counterpartKey] = extensionModule;
                         }
 
                         foreach (var line in mappedLines.Where(l => extensionModule.BpInfo.All(x => (int)x.Line != l)))
@@ -348,12 +372,22 @@ namespace Onec.DebugAdapter.Services
             };
         }
 
-        public void ClearStackFrameInfo(int threadId)
+        /// <summary>
+        /// Предмету отладки отправлен шаг или продолжение. Отметка снимается на следующем останове.
+        /// </summary>
+        public void ThreadResumed(int threadId) => _resumedThreads[threadId] = true;
+
+        /// <summary>
+        /// Выполнение продолжено. Запрос значений мог уйти раньше и получить отказ уже на ходу:
+        /// такой отказ не ошибка сессии.
+        /// </summary>
+        private bool Resumed(int threadId)
         {
-            _callStackRequestTasks.TryRemove(threadId, out _);
-            _threadsCallStack.TryRemove(threadId, out _);
-            _frameIdentifiers.Clear(item => item.ThreadId == threadId);
-            _variableIdentifiers.Clear(item => item.ThreadId == threadId);
+            if (!_resumedThreads.ContainsKey(threadId))
+                return false;
+
+            Log.Debug($"переменные потока {threadId} не получены: выполнение продолжено");
+            return true;
         }
 
         public ScopesResponse GetScopes(ScopesArguments args)
@@ -377,13 +411,24 @@ namespace Onec.DebugAdapter.Services
         {
             (int ThreadId, int FrameId, List<SourceCalculationDataItem> Path, ViewInterface ViewInterface) = _variableIdentifiers.Get(args.VariablesReference);
 
-            var debuggeeResponse = (Path.Count > 0) switch
-            {
-                true => await Eval(ThreadId, FrameId, Path, ViewInterface),
-                _ => await EvalLocalVariables(ThreadId, FrameId)
-            };
-            var result = debuggeeResponse.FirstOrDefault();
             var response = new VariablesResponse();
+            // Значения сервер отдаёт только остановленному предмету отладки.
+            if (Resumed(ThreadId))
+                return response;
+
+            List<CalculationResultBaseData> debuggeeResponse;
+            try
+            {
+                debuggeeResponse = Path.Count > 0
+                    ? await Eval(ThreadId, FrameId, Path, ViewInterface)
+                    : await EvalLocalVariables(ThreadId, FrameId);
+            }
+            catch (System.Exception) when (Resumed(ThreadId))
+            {
+                return response;
+            }
+
+            var result = debuggeeResponse.FirstOrDefault();
             if (result == null)
                 return response;
 
@@ -394,7 +439,18 @@ namespace Onec.DebugAdapter.Services
                 foreach (var delay in _configuration.VariablesRetryDelaysMs)
                 {
                     await Task.Delay(delay, _cancellation);
-                    result = (await EvalLocalVariables(ThreadId, FrameId)).FirstOrDefault() ?? result;
+                    if (Resumed(ThreadId))
+                        return response;
+
+                    try
+                    {
+                        result = (await EvalLocalVariables(ThreadId, FrameId)).FirstOrDefault() ?? result;
+                    }
+                    catch (System.Exception) when (Resumed(ThreadId))
+                    {
+                        return response;
+                    }
+
                     if (!LocalsEmpty(result))
                         break;
                 }
@@ -534,7 +590,9 @@ namespace Onec.DebugAdapter.Services
                 return variables;
 
             var frame = frames[frameId];
-            var modulePath = _metadataProvider.LocalModulePath((frame.ModuleId.ExtensionName ?? "", frame.ModuleId.ObjectId, frame.ModuleId.PropertyId));
+            var url = frame.ModuleId.Url ?? "";
+            var modulePath = (url.Length > 0 ? _metadataProvider.TryModulePathByExternalUrl(url, frame.ModuleId.PropertyId) : null)
+                ?? _metadataProvider.LocalModulePath((frame.ModuleId.ExtensionName ?? "", frame.ModuleId.ObjectId, frame.ModuleId.PropertyId));
             if (modulePath == null)
                 return variables;
 
@@ -834,12 +892,16 @@ namespace Onec.DebugAdapter.Services
 
             if (e.Info.SendMessageOnly == true)
             {
+                // Точка с выводом сообщения: предмет отладки сразу идёт дальше.
+                ThreadResumed(threadId);
                 await ContinueDebugTarget(e.Info.TargetId);
                 return;
             }
 
             if (e.Info.SendHitCounterOnly)
                 return;
+
+            _resumedThreads.TryRemove(threadId, out _);
 
             if (e.Info.StopByBp == true || e.Info.SuspendedByOther)
                 _client.SendEvent(new StoppedEvent()
@@ -914,8 +976,5 @@ namespace Onec.DebugAdapter.Services
 
             return reference;
         }
-
-        private static (string, string, string) GetModuleKey(BslModuleIdInternal id)
-            => (id.ExtensionName, id.ObjectId, id.PropertyId);
     }
 }

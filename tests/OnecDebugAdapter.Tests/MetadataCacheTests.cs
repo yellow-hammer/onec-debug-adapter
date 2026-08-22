@@ -1,6 +1,3 @@
-using Newtonsoft.Json.Linq;
-using Onec.DebugAdapter.DebugServer;
-using Onec.DebugAdapter.Services;
 using Onec.DebugAdapter.V8;
 using Xunit;
 
@@ -154,6 +151,74 @@ namespace Onec.DebugAdapter.Tests
         }
 
         [Fact]
+        public async Task КопииОбработокСОдинаковымUuidНеДелятСобранныйФайл()
+        {
+            var provider = await CacheForExternal(Fixture("duplicate-uuid"));
+            var first = Fixture("duplicate-uuid", "ПерваяКопия", "Ext", "ObjectModule.bsl");
+            var second = Fixture("duplicate-uuid", "ВтораяКопия", "Ext", "ObjectModule.bsl");
+
+            // Копия обработки сохраняет uuid оригинала, поэтому тройка идентификаторов
+            // у них общая: так устроена и демонстрационная конфигурация SSL.
+            Assert.Equal(provider.ModuleInfoByPath(first), provider.ModuleInfoByPath(second));
+
+            Assert.Equal("file://C:/out/epf/ПерваяКопия.epf", provider.ExternalModuleUrlByPath(first));
+            Assert.Equal("file://C:/out/epf/ВтораяКопия.epf", provider.ExternalModuleUrlByPath(second));
+        }
+
+        [Fact]
+        public async Task КопииОтчётовСОдинаковымUuidТожеРазличаются()
+        {
+            var provider = await CacheForExternal(Fixture("duplicate-uuid"));
+            var first = Fixture("duplicate-uuid", "ПервыйОтчёт", "Ext", "ObjectModule.bsl");
+            var second = Fixture("duplicate-uuid", "ВторойОтчёт", "Ext", "ObjectModule.bsl");
+
+            Assert.Equal(provider.ModuleInfoByPath(first), provider.ModuleInfoByPath(second));
+
+            Assert.Equal("file://C:/out/epf/ПервыйОтчёт.epf", provider.ExternalModuleUrlByPath(first));
+            Assert.Equal("file://C:/out/epf/ВторойОтчёт.epf", provider.ExternalModuleUrlByPath(second));
+        }
+
+        [Theory]
+        [InlineData("ExternalDataProcessors", "ПерваяКопия", "ВтораяКопия")]
+        [InlineData("ExternalReports", "ПервыйОтчёт", "ВторойОтчёт")]
+        public async Task КопииВФорматеEDTТожеРазличаются(string mdType, string firstName, string secondName)
+        {
+            var provider = await CacheForExternal(Fixture("duplicate-uuid-edt"));
+            var first = Fixture("duplicate-uuid-edt", "src", mdType, firstName, "ObjectModule.bsl");
+            var second = Fixture("duplicate-uuid-edt", "src", mdType, secondName, "ObjectModule.bsl");
+
+            Assert.Equal(provider.ModuleInfoByPath(first), provider.ModuleInfoByPath(second));
+
+            Assert.Equal($"file://C:/out/epf/{firstName}.epf", provider.ExternalModuleUrlByPath(first));
+            Assert.Equal($"file://C:/out/epf/{secondName}.epf", provider.ExternalModuleUrlByPath(second));
+        }
+
+        [Fact]
+        public async Task UrlСобранногоФайлаНаходитсяИПоGitUri()
+        {
+            // Путь из редактора приходит и во вкладке Git: поиск URL обязан
+            // проходить тот же резолв, что и поиск модуля.
+            var provider = await CacheForExternal(Fixture("duplicate-uuid"));
+            var second = Fixture("duplicate-uuid", "ВтораяКопия", "Ext", "ObjectModule.bsl");
+
+            Assert.Equal(
+                "file://C:/out/epf/ВтораяКопия.epf",
+                provider.ExternalModuleUrlByPath(SourcePathTests.GitUri(second)));
+        }
+
+        [Fact]
+        public async Task ПутьИсходникаНаходитсяПоUrlСобранногоФайла()
+        {
+            var provider = await CacheForExternal(Fixture("duplicate-uuid"));
+            var second = Fixture("duplicate-uuid", "ВтораяКопия", "Ext", "ObjectModule.bsl");
+            var propertyId = provider.ModuleInfoByPath(second).PropertyId;
+
+            Assert.Equal(
+                second,
+                provider.TryModulePathByExternalUrl("file://C:/out/epf/ВтораяКопия.epf", propertyId));
+        }
+
+        [Fact]
         public async Task ОдинАртефактВРазныхФорматахДаётОдниИдентификаторы()
         {
             var edt = await CacheForExternal(Fixture("external", "edt"));
@@ -164,38 +229,5 @@ namespace Onec.DebugAdapter.Tests
 
             Assert.Equal(designer.ModuleInfoByPath(designerFormModule), edt.ModuleInfoByPath(edtFormModule));
         }
-    }
-
-    /// <summary>Конфигурация отладки с заданными корнями исходников.</summary>
-    internal sealed class FakeDebugConfiguration(
-        string rootProject,
-        (string Name, string Path)[] extensions,
-        IReadOnlyList<string>? externalSources = null,
-        Func<string, string?>? externalBuildFile = null) : IDebugConfiguration
-    {
-        public Task Initialization => Task.CompletedTask;
-        public InfoBaseItem InfoBase => new("test", new Dictionary<string, string?>());
-        public bool IsFileInfoBase => true;
-        public string InfoBaseName => "test";
-        public string PlatformBin => string.Empty;
-        public string DebuggerID => "test";
-        public string DebugServerHost => "localhost";
-        public int DebugServerPort => 1550;
-        public string RootProject => rootProject;
-        public IReadOnlyDictionary<string, string> Extensions => extensions.ToDictionary(item => item.Name, item => item.Path);
-        public IReadOnlyList<string> ExternalSources => externalSources ?? [];
-        public string? ExternalBuildFile(string artifactName) => externalBuildFile?.Invoke(artifactName);
-        public DebugTargetType[] InitialTargetTypes => [];
-        public int PollMinDelayMs => 25;
-        public int PollMaxDelayMs => 200;
-        public int CalcWaitingTimeMs => 100;
-        public IReadOnlyList<int> VariablesRetryDelaysMs => [];
-        public bool DiagnosticLogging => false;
-        public string User => string.Empty;
-        public string Password => string.Empty;
-        public void SetDebugServerPort(int port) { }
-        public T CreateRequest<T>() where T : RDbgBaseRequest, new() => new();
-        public T CreateRequest<T>(Action<T> factory) where T : RDbgBaseRequest, new() => new();
-        public Task Init(Dictionary<string, JToken> arguments) => Task.CompletedTask;
     }
 }

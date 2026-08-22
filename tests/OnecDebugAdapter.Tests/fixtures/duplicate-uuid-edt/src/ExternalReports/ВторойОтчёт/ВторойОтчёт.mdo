@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:ExternalReport xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="0e130a7c-7f6b-41c4-94bc-ad4473b89915">
+  <producedTypes>
+    <objectType typeId="71aec6e1-b236-46cd-a637-c152154b4955" valueTypeId="0acfdb4d-18fd-4210-8aeb-47fe124aecac"/>
+  </producedTypes>
+  <name>ВторойОтчёт</name>
+  <containedObjects classId="e41aff26-25cf-4bb6-b6c1-3f478a75f374" objectId="1229d0c9-771f-4a32-8630-f58172a246ba"/>
+</mdclass:ExternalReport>

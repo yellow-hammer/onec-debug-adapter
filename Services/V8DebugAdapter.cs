@@ -5,7 +5,6 @@ using Onec.DebugAdapter.DebugProtocol;
 using Onec.DebugAdapter.DebugServer;
 using Onec.DebugAdapter.Extensions;
 using Onec.DebugAdapter.V8;
-using System.Net.Http.Headers;
 using Exception = System.Exception;
 using Thread = Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages.Thread;
 
@@ -144,7 +143,7 @@ namespace Onec.DebugAdapter.Services
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                Log.Debug($"setBreakpoints: ошибка — {ex.Message}");
+                Log.Debug($"setBreakpoints: ошибка. {ex.Message}");
                 SetProtocolError(responder, $"Ошибка при обработке запроса конфигурации точек останова: {ex.Message}", ex);
             }
         }
@@ -265,6 +264,7 @@ namespace Onec.DebugAdapter.Services
                 await _debugServer.Run(Protocol);
 
             await _debugServerClient.Test(_cancellation);
+            Log.Debug($"сервер отладки: {_configuration.DebugServerHost}:{_configuration.DebugServerPort}");
 
             var response = await _debugServerClient.AttachDebugUI(_configuration.CreateRequest<RdbgAttachDebugUiRequest>(i =>
             {
@@ -329,6 +329,8 @@ namespace Onec.DebugAdapter.Services
                 request.TargetId = _debugTargetsManager.GetTargetId(threadId).ToLight();
                 request.Action = action;
 
+                // Отметка до отправки: запрос значений может прийти, пока шаг ещё в пути.
+                _stoppingManager.ThreadResumed(threadId);
                 var response = await _debugServerClient.Step(request, _cancellation);
 
                 if (response?.ItemSpecified == true)
@@ -341,6 +343,7 @@ namespace Onec.DebugAdapter.Services
                             switch (item.State)
                             {
                                 case DbgTargetState.Worked:
+                                    _stoppingManager.ThreadResumed(itemThreadId);
                                     Protocol.SendEvent(new ContinuedEvent()
                                     {
                                         ThreadId = itemThreadId,

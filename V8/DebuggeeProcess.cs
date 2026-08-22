@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using Onec.DebugAdapter.Extensions;
@@ -7,8 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Onec.DebugAdapter.V8
@@ -53,6 +50,12 @@ namespace Onec.DebugAdapter.V8
             return value.Length == 0 ? trimmed : $"{key}\"{value}\"";
         }
 
+        /// <summary>Пароль автовхода в журнал не попадает.</summary>
+        internal static string HidePassword(string argument)
+            => argument.StartsWith("/P\"", StringComparison.Ordinal) && argument.Length > 4
+                ? "/P\"***\""
+                : argument;
+
         public void Run(DebugProtocolClient client)
         {
             _client = client;
@@ -76,7 +79,6 @@ namespace Onec.DebugAdapter.V8
                 arguments.Add("/WA-");
                 arguments.Add($"/N\"{_configuration.User}\"");
                 arguments.Add($"/P\"{_configuration.Password}\"");
-                Log.Debug($"автовход: пользователь=\"{_configuration.User}\", пароль={(string.IsNullOrEmpty(_configuration.Password) ? "(пусто)" : "***")}");
             }
 
             var exePath = Path.Join(
@@ -88,6 +90,8 @@ namespace Onec.DebugAdapter.V8
                 });
             if (!File.Exists(exePath))
                 throw new Exception("Исполняемый файл клиента 1С не найден");
+
+            Log.Debug($"клиент 1С: {exePath} {string.Join(" ", arguments.Select(HidePassword))}");
 
 			_process = new Process
             {
@@ -122,17 +126,11 @@ namespace Onec.DebugAdapter.V8
         {
             if (!disposedValue)
             {
-                if (disposing)
-                {
-                    // TODO: освободить управляемое состояние (управляемые объекты)
-                }
-
                 Stop();
                 disposedValue = true;
             }
         }
 
-        // TODO: переопределить метод завершения, только если "Dispose(bool disposing)" содержит код для освобождения неуправляемых ресурсов
         ~DebuggeeProcess()
         {
             Dispose(disposing: false);

@@ -9,7 +9,7 @@ namespace Onec.DebugAdapter.Services
         Task<SetBreakpointsResponse> SetBreakpoints(SetBreakpointsArguments args);
         Task<SetExceptionBreakpointsResponse> SetExceptionBreakpoints(SetExceptionBreakpointsArguments args);
         Task<StackTraceResponse> GetCallStack(StackTraceArguments args);
-        void ClearStackFrameInfo(int threadId);
+        void ThreadResumed(int threadId);
         ScopesResponse GetScopes(ScopesArguments args);
         Task<VariablesResponse> GetVariables(VariablesArguments args);
         Task<EvaluateResponse> Evaluate(EvaluateArguments args);

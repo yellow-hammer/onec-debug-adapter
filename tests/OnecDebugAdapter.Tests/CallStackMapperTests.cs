@@ -90,7 +90,7 @@ namespace Onec.DebugAdapter.Tests
                 Presentation = Encoding.UTF8.GetBytes(presentation)
             };
 
-        private sealed class StubMetadata(string? path) : IMetadataProvider
+        private sealed class StubMetadata(string? path, string externalUrl = "") : IMetadataProvider
         {
             public Task Init(DebugProtocolClient client, CancellationToken cancellationToken = default) => Task.CompletedTask;
             public string ModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default)
@@ -101,6 +101,9 @@ namespace Onec.DebugAdapter.Tests
                 => throw new NotSupportedException();
             public bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info) => false;
             public string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info) => "";
+            public string ExternalModuleUrlByPath(string modulePath) => externalUrl;
+            public string? TryModulePathByExternalUrl(string url, string propertyId)
+                => externalUrl.Length > 0 && url == externalUrl ? path : null;
             public string? LocalModulePath((string Extension, string ObjectId, string PropertyId) info) => path;
             public IEnumerable<(string Extension, string ObjectId, string PropertyId)> ExtensionCounterparts((string Extension, string ObjectId, string PropertyId) info)
                 => [];

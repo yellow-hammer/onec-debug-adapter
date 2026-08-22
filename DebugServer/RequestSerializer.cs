@@ -20,7 +20,10 @@ namespace Onec.DebugAdapter.DebugServer
             var serializer = new XmlSerializer(obj.GetType(), rootElement);
             serializer.Serialize(mStream, obj);
 
-            return Encoding.UTF8.GetString(mStream.GetBuffer());
+            // ToArray, а не GetBuffer: последний отдаёт весь внутренний буфер вместе
+            // с незаполненным хвостом, и нулевые байты уезжают в тело запроса. Сервер
+            // видит их как содержимое после корневого элемента и отвечает 400.
+            return Encoding.UTF8.GetString(mStream.ToArray());
         }
 
         public string? Serialize(Parameter bodyParameter) 

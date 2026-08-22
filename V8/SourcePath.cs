@@ -8,6 +8,28 @@ namespace Onec.DebugAdapter.V8
     /// </summary>
     internal static class SourcePath
     {
+        /// <summary>
+        /// Канонический вид пути: Git-URI приводится к пути на диске, путь к полному виду ОС.
+        /// Одним ключом адресуются файл из редактора, из вкладки Git и из кэша модулей.
+        /// </summary>
+        public static string Canonical(string path) => Normalize(Resolve(path));
+
+        /// <summary>Полный путь с разделителями ОС; непригодный путь остаётся как есть.</summary>
+        public static string Normalize(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+
+            try
+            {
+                return Path.GetFullPath(path.Trim());
+            }
+            catch
+            {
+                return path.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+            }
+        }
+
         public static string Resolve(string path)
         {
             if (string.IsNullOrEmpty(path))

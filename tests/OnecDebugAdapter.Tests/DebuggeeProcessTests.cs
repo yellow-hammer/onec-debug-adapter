@@ -4,7 +4,7 @@ using Xunit;
 namespace Onec.DebugAdapter.Tests
 {
     /// <summary>
-    /// Строка подключения в командной строке клиента 1С.
+    /// Командная строка клиента 1С: строка подключения и то, что можно писать в журнал.
     /// </summary>
     public class DebuggeeProcessTests
     {
@@ -55,6 +55,21 @@ namespace Onec.DebugAdapter.Tests
         public void Незнакомое_или_пустое_остаётся_как_есть(string connect)
         {
             Assert.Equal(connect.Trim(), DebuggeeProcess.QuoteConnectString(connect));
+        }
+
+        [Fact]
+        public void Пароль_автовхода_в_журнал_не_попадает()
+        {
+            Assert.Equal(@"/P""***""", DebuggeeProcess.HidePassword(@"/P""секрет"""));
+        }
+
+        [Theory]
+        [InlineData(@"/P""""")]
+        [InlineData(@"/N""Администратор""")]
+        [InlineData("/DisableStartupMessages")]
+        public void Остальные_аргументы_не_меняются(string argument)
+        {
+            Assert.Equal(argument, DebuggeeProcess.HidePassword(argument));
         }
     }
 }

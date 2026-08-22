@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:ExternalDataProcessor xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="4c1090aa-a76e-4693-87c0-6f4b7494467d">
+  <producedTypes>
+    <objectType typeId="ad42f029-5d1a-4697-a290-1f18b3ac64a5" valueTypeId="b0bfe108-8805-4d49-a22c-dea2dae5b5a9"/>
+  </producedTypes>
+  <name>ВтораяКопия</name>
+  <containedObjects classId="c3831ec8-d8d5-4f93-8a22-f9bfae07327f" objectId="60d92f5c-f354-437e-bcc5-5e8f0eff109d"/>
+</mdclass:ExternalDataProcessor>

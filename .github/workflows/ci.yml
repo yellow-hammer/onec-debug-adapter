@@ -14,8 +14,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Работа с путями и сеть к серверу отладки различаются по ОС, поэтому набор идёт на всех трёх.
   test:
-    runs-on: ubuntu-latest
+    name: Тесты (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: Получить код
         uses: actions/checkout@v7
