@@ -26,7 +26,9 @@ namespace Onec.DebugAdapter.Services
         private CancellationToken _cancellation;
 
         private readonly object _lock = new();
-        private readonly Dictionary<(string Extension, string ObjectId, string PropertyId), Dictionary<int, LineMeasure>> _measures = new();
+        // Ключ — путь исходника: у копий внешних обработок тройка идентификаторов общая,
+        // и замеры обеих сходились бы в одну.
+        private readonly Dictionary<string, Dictionary<int, LineMeasure>> _measures = new();
         private double _totalSeconds;
         private volatile bool _active;
 
@@ -107,9 +109,13 @@ namespace Onec.DebugAdapter.Services
 
                     foreach (var module in measure.ModuleData)
                     {
-                        var key = (module.ModuleId.ExtensionName ?? "", module.ModuleId.ObjectId, module.ModuleId.PropertyId);
-                        if (!_measures.TryGetValue(key, out var lines))
-                            _measures[key] = lines = new Dictionary<int, LineMeasure>();
+                        // Модули вне исходного кода проекта (например, недоступных расширений) пропускаем.
+                        var modulePath = CallStackMapper.ResolveSourcePath(_metadataProvider, module.ModuleId);
+                        if (modulePath == null)
+                            continue;
+
+                        if (!_measures.TryGetValue(modulePath, out var lines))
+                            _measures[modulePath] = lines = new Dictionary<int, LineMeasure>();
 
                         foreach (var line in module.LineInfo)
                         {
@@ -143,13 +149,8 @@ namespace Onec.DebugAdapter.Services
         {
             var modules = new List<MeasureModuleResult>();
 
-            foreach (var (key, lines) in _measures)
+            foreach (var (path, lines) in _measures)
             {
-                // Модули вне исходного кода проекта (например, недоступных расширений) пропускаем.
-                var path = _metadataProvider.TryModulePathByInfo(key.Extension, key.ObjectId, key.PropertyId, _cancellation);
-                if (path == null)
-                    continue;
-
                 modules.Add(new MeasureModuleResult()
                 {
                     Path = path,

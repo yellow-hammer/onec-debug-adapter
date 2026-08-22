@@ -50,6 +50,23 @@ namespace Onec.DebugAdapter.Tests
             Assert.Equal(filePath, Path.GetFullPath(SourcePath.Resolve(new Uri(filePath).AbsoluteUri)));
         }
 
+        /// <summary>Каноническим видом адресуются карты путей: у файла и его git-URI он один.</summary>
+        [Fact]
+        public void КаноническийВидУФайлаИЕгоGitUriОдин()
+        {
+            var filePath = Path.Combine(Path.GetTempPath(), "cfg", "Ext", "Module.bsl");
+
+            Assert.Equal(SourcePath.Canonical(filePath), SourcePath.Canonical(GitUri(filePath)));
+        }
+
+        [Fact]
+        public void КаноническийВидДостраиваетОтносительныйПуть()
+        {
+            var relative = Path.Combine("src", "cf", "Ext", "Module.bsl");
+
+            Assert.Equal(Path.GetFullPath(relative), SourcePath.Canonical(relative));
+        }
+
         /// <summary>Как <c>uri.toString()</c> у Git VS Code и <c>CapitalizeFirstChar</c> в адаптере.</summary>
         internal static string GitUri(string filePath, string refName = "")
         {

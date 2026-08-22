@@ -19,6 +19,12 @@ namespace Onec.DebugAdapter.V8
 
         string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info);
 
+        /// <summary>URL собранного файла по пути исходника.</summary>
+        string ExternalModuleUrlByPath(string path);
+
+        /// <summary>Путь исходника по URL собранного файла и свойству модуля.</summary>
+        string? TryModulePathByExternalUrl(string url, string propertyId);
+
         string? LocalModulePath((string Extension, string ObjectId, string PropertyId) info);
 
         IEnumerable<(string Extension, string ObjectId, string PropertyId)> ExtensionCounterparts((string Extension, string ObjectId, string PropertyId) info);

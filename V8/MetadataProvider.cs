@@ -25,6 +25,12 @@ namespace Onec.DebugAdapter.V8
         // и URL собранного файла (.epf/.erf); пустой URL — собранный файл не найден.
         private readonly ConcurrentDictionary<(string Extension, string ObjectId, string PropertyId), string> _externalModules = new();
 
+        // Копии обработок сохраняют uuid оригинала, поэтому тройка идентификаторов
+        // у них совпадает. Для внешних модулей ключом служит то, что уникально:
+        // путь исходника при установке точек и URL собранного файла при остановке.
+        private readonly ConcurrentDictionary<string, string> _externalUrlsByPath = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<(string Url, string PropertyId), string> _pathsByExternalUrl = new();
+
         public MetadataProvider(IDebugConfiguration debugConfiguration)
         {
             _configuration = debugConfiguration;
@@ -39,19 +45,6 @@ namespace Onec.DebugAdapter.V8
 
 			client.SendEvent(new ProgressEndEvent(id));
 		}
-
-        private static string NormalizePath(string path)
-        {
-            if (string.IsNullOrEmpty(path)) return path;
-            try
-            {
-                return Path.GetFullPath(path.Trim());
-            }
-            catch
-            {
-                return path.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-            }
-        }
 
         private static string ToForwardSlashes(string path)
             => path.Trim().Replace('\\', '/').TrimEnd('/');
@@ -82,7 +75,7 @@ namespace Onec.DebugAdapter.V8
                 Log.Debug($"путь исходника: «{path}» → «{resolved}»");
             path = resolved;
 
-            var normalized = NormalizePath(path);
+            var normalized = SourcePath.Normalize(path);
             if (_modulesInfoByPath.TryGetValue(normalized, out var info))
                 return info;
 
@@ -311,6 +304,20 @@ namespace Onec.DebugAdapter.V8
         public string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info)
             => _externalModules.TryGetValue(info, out var url) ? url : string.Empty;
 
+        /// <summary>
+        /// URL собранного файла по пути исходника: у копий обработок uuid общий.
+        /// Путь проходит тот же резолв, что и поиск модуля, иначе Git-URI и путь
+        /// с другой машины не совпадут. Пусто — сопоставить не удалось.
+        /// </summary>
+        public string ExternalModuleUrlByPath(string path)
+            => _externalUrlsByPath.TryGetValue(SourcePath.Canonical(path), out var url)
+                ? url
+                : string.Empty;
+
+        /// <summary>Путь исходника по URL собранного файла и свойству модуля.</summary>
+        public string? TryModulePathByExternalUrl(string url, string propertyId)
+            => _pathsByExternalUrl.TryGetValue((url, propertyId), out var path) ? path : null;
+
         /// <summary>Раздаёт объекты EDT читателям: разбор mdo идёт параллельно, как у формата конфигуратора.</summary>
         private async Task SendEdtObjects(
             string extension,
@@ -381,15 +388,20 @@ namespace Onec.DebugAdapter.V8
 
         private void CacheModule(string path, string extension, string objectId, string propertyId, string root, string? externalUrl)
         {
-            var normalizedPath = NormalizePath(path);
+            var normalizedPath = SourcePath.Normalize(path);
             var info = (extension, objectId, propertyId);
             _modulesInfoByPath.TryAdd(normalizedPath, info);
             _pathsByModuleInfo.TryAdd(info, normalizedPath);
             if (externalUrl != null)
+            {
                 _externalModules.TryAdd(info, externalUrl);
+                _externalUrlsByPath[normalizedPath] = externalUrl;
+                if (externalUrl.Length > 0)
+                    _pathsByExternalUrl[(externalUrl, propertyId)] = normalizedPath;
+            }
 
             // Относительный индекс для кросс-ОС резолва: «<имя каталога корня>/<путь внутри исходного кода>».
-            var normalizedRoot = NormalizePath(root);
+            var normalizedRoot = SourcePath.Normalize(root);
             if (normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
             {
                 var relKey = Path.GetFileName(normalizedRoot) + "/" + ToForwardSlashes(normalizedPath[normalizedRoot.Length..].TrimStart('\\', '/'));

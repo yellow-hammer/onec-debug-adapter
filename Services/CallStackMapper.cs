@@ -29,6 +29,17 @@ namespace Onec.DebugAdapter.Services
             if (objectId.Length == 0 || propertyId.Length == 0)
                 return null;
 
+            // У копий внешних обработок uuid общий, поэтому сначала пробуем URL
+            // собранного файла: он различает их однозначно. Платформа присылает его
+            // не всегда, тогда остаётся поиск по тройке идентификаторов.
+            var url = moduleId.Url ?? "";
+            if (url.Length > 0)
+            {
+                var byUrl = metadata.TryModulePathByExternalUrl(url, propertyId);
+                if (byUrl != null)
+                    return byUrl;
+            }
+
             return metadata.TryModulePathByInfo(moduleId.ExtensionName ?? "", objectId, propertyId);
         }
 
