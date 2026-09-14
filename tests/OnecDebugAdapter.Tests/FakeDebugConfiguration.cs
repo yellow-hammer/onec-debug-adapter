@@ -16,6 +16,7 @@ namespace Onec.DebugAdapter.Tests
         public Task Initialization => Task.CompletedTask;
         public InfoBaseItem InfoBase => new("test", new Dictionary<string, string?>());
         public bool IsFileInfoBase => true;
+        public bool OwnsDebugServer => true;
         public string InfoBaseName => "test";
         public string PlatformBin => string.Empty;
         public string DebuggerID => "test";

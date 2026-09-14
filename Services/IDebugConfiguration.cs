@@ -10,6 +10,9 @@ namespace Onec.DebugAdapter.Services
 
 		InfoBaseItem InfoBase { get; }
         bool IsFileInfoBase { get; }
+        // Сервер отладки запускает сам адаптер: только при запуске файловой ИБ.
+        // При присоединении сервер уже работает, например внутри автономного сервера.
+        bool OwnsDebugServer { get; }
         string InfoBaseName { get; }
         string PlatformBin { get; }
         string DebuggerID { get; }
@@ -29,7 +32,7 @@ namespace Onec.DebugAdapter.Services
         string User { get; }
         string Password { get; }
 
-        // Отладочный порт файловой информационной базы выбирается на лету, поэтому требуется инжект в конфигурацию отладки
+        // Порт своего сервера отладки выбирается на лету, поэтому требуется инжект в конфигурацию отладки
         void SetDebugServerPort(int port);
 
         T CreateRequest<T>() where T : RDbgBaseRequest, new();
