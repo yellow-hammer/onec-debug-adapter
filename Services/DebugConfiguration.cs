@@ -21,6 +21,7 @@ namespace Onec.DebugAdapter.Services
 
         public InfoBaseItem InfoBase { get; private set; } = null!;
         public bool IsFileInfoBase { get; private set; } = false;
+        public bool OwnsDebugServer { get; private set; } = false;
         public string InfoBaseName { get; private set; } = string.Empty;
         public string PlatformBin { get; private set; } = string.Empty;
         public string DebugServerHost { get; private set; } = string.Empty;
@@ -114,14 +115,15 @@ namespace Onec.DebugAdapter.Services
             InitExternalBuilds(arguments, "externalFilesBuilds");
 
             DebugServerHost = arguments.GetValueAsString("debugServerHost");
-            
-            if (!IsFileInfoBase)
+            OwnsDebugServer = IsFileInfoBase && arguments.GetValueAsString("request") == "launch";
+
+            if (!OwnsDebugServer)
                 DebugServerPort = arguments.GetValueAsInt("debugServerPort") ?? 1550;
 
             RootProject = arguments.GetValueAsString("rootProject");
             DebuggerID = Guid.NewGuid().ToString();
 
-            if (!IsFileInfoBase)
+            if (!OwnsDebugServer)
                 _tcs.SetResult();
         }
 
@@ -129,7 +131,7 @@ namespace Onec.DebugAdapter.Services
         {
 			DebugServerPort = port;
 
-			if (IsFileInfoBase)
+			if (OwnsDebugServer)
 				_tcs.SetResult();
 		}
 

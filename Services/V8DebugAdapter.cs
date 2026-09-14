@@ -258,9 +258,9 @@ namespace Onec.DebugAdapter.Services
         {
             await _configuration.Init(configurationArgs);
             Log.Init(Protocol, _configuration.DiagnosticLogging);
-            Log.Debug($"старт отладки ({(launch ? "launch" : "attach")}); файловая ИБ={_configuration.IsFileInfoBase}");
+            Log.Debug($"старт отладки ({(launch ? "launch" : "attach")}); файловая ИБ={_configuration.IsFileInfoBase}; свой сервер отладки={_configuration.OwnsDebugServer}");
 
-            if (_configuration.IsFileInfoBase)
+            if (_configuration.OwnsDebugServer)
                 await _debugServer.Run(Protocol);
 
             await _debugServerClient.Test(_cancellation);
