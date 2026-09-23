@@ -61,9 +61,16 @@ namespace Onec.DebugAdapter.Services
 
         public async Task<DebugTargetId[]> GetDebugTargets()
         {
-            var response = await _debugServerClient.GetDbgTargets(_configuration.CreateRequest<RdbgsGetDbgTargetsRequest>(), _cancellation);
-
-            return response!.Id.ToArray();
+            try
+            {
+                var response = await _debugServerClient.GetDbgTargets(_configuration.CreateRequest<RdbgsGetDbgTargetsRequest>(), _cancellation);
+                return response?.Id.ToArray() ?? [];
+            }
+            catch (DebugServerException ex) when (ex.StatusCode == 400)
+            {
+                // Запрос списка до attachDebugUI и после detach: отладчик на сервере не зарегистрирован.
+                return [];
+            }
         }
 
         public async Task SetAutoAttachTargetTypes(List<DebugTargetType> types)

@@ -141,7 +141,7 @@ namespace Onec.DebugAdapter.DebugServer
             // а не выводится из статуса.
             var status = (int)response.StatusCode;
             if (status != 0 && (status < 200 || status > 299))
-                throw new InvalidOperationException(
+                throw new DebugServerException(status,
                     $"{command}: {status} {response.StatusDescription}. {response.Content}".Trim());
 
             if (response.ErrorException != null)

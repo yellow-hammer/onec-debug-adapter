@@ -22,12 +22,28 @@ namespace Onec.DebugAdapter.Tests
             using var server = StubServer.Answering(400, "Bad request", "<exception>Ошибка разбора XML</exception>");
             var client = ClientFor(server);
 
-            var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            var error = await Assert.ThrowsAsync<DebugServerException>(
                 () => client.SetBreakpoints(new RdbgSetBreakpointsRequest()));
 
             Assert.Contains("setBreakpoints", error.Message);
             Assert.Contains("400", error.Message);
             Assert.Contains("Ошибка разбора XML", error.Message);
+        }
+
+        /// <summary>
+        /// До attachDebugUI и после detach сервер отвечает на getDbgTargets кодом 400: по коду,
+        /// а не по тексту на языке платформы, такой отказ отличается от сбоя.
+        /// </summary>
+        [Fact]
+        public async Task ОтказСервераНесётКодОтвета()
+        {
+            using var server = StubServer.Answering(400, "Bad request", "<exception>UI+ - часть отладки не зарегистрирована</exception>");
+            var client = ClientFor(server);
+
+            var error = await Assert.ThrowsAsync<DebugServerException>(
+                () => client.GetDbgTargets(new RdbgsGetDbgTargetsRequest()));
+
+            Assert.Equal(400, error.StatusCode);
         }
 
         /// <summary>Имя команды нужно у каждой: по одному коду статуса не понять, что отказало.</summary>
@@ -42,7 +58,7 @@ namespace Onec.DebugAdapter.Tests
             using var server = StubServer.Answering(400, "Bad request", "<exception>отказ</exception>");
             var client = ClientFor(server);
 
-            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Call(client, command));
+            var error = await Assert.ThrowsAsync<DebugServerException>(() => Call(client, command));
 
             Assert.Contains(command, error.Message);
             Assert.Contains("отказ", error.Message);
