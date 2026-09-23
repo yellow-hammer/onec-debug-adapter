@@ -88,6 +88,10 @@ namespace Onec.DebugAdapter.DebugServer
         public Task<RdbgStepResponse?> Step(RdbgStepRequest request, CancellationToken cancellationToken = default)
             => Send<RdbgStepResponse>("step", Body("step", request), cancellationToken);
 
+        // В HTTP команда называется terminateDbgTarget: у XML-типа другое имя, и «terminate» сервер не выполняет.
+        public Task Terminate(RdbgTerminateRequest request, CancellationToken cancellationToken = default)
+            => Send("terminateDbgTarget", Body("terminateDbgTarget", request), cancellationToken);
+
         public void Dispose()
         {
             _client?.Dispose();

@@ -54,7 +54,10 @@ namespace Onec.DebugAdapter.Services
             };
         }
         public DebugTargetId[] GetAttachedDebugTargets()
-            => _attachedTargets.Values.ToArray();
+        {
+            lock (_threadIds)
+                return _attachedTargets.Values.ToArray();
+        }
 
         public async Task<DebugTargetId[]> GetDebugTargets()
         {

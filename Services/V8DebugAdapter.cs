@@ -15,6 +15,9 @@ namespace Onec.DebugAdapter.Services
         private CancellationToken _cancellation;
         private bool disposedValue;
         private bool _attached = false;
+        private bool _ownsDebuggee;
+        private readonly object _disconnectGate = new();
+        private Task? _disconnectTask;
 
         private bool _linesStartAt1 = false;
 
@@ -245,12 +248,12 @@ namespace Onec.DebugAdapter.Services
         {
             try
             {
-                await Disconnect();
+                await Disconnect(responder.Arguments.TerminateDebuggee);
                 responder.SetResponse(new DisconnectResponse());
             }
             catch (Exception ex)
             {
-                SetProtocolError(responder, "Ошибка присоединения к серверу отладки", ex);
+                SetProtocolError(responder, "Ошибка завершения отладки", ex);
             }
         }
 
@@ -275,7 +278,10 @@ namespace Onec.DebugAdapter.Services
             }));
 
 			if (launch)
+			{
 				_debuggee.Run(Protocol);
+				_ownsDebuggee = true;
+			}
 
 			_attached = true;
 
@@ -307,18 +313,61 @@ namespace Onec.DebugAdapter.Services
             };
         }
 
-        private async Task Disconnect()
+        private Task Disconnect(bool? terminateDebuggee = null)
         {
-            // Останавливаем опрос до detach: иначе листенер продолжит слать ошибки клиенту.
+            // Сессию запускали мы — её и завершаем, даже если клиент оборвал канал раньше запроса disconnect.
+            var terminate = _ownsDebuggee || terminateDebuggee == true;
+            lock (_disconnectGate)
+                return _disconnectTask ??= DisconnectCore(terminate);
+        }
+
+        private async Task DisconnectCore(bool terminate)
+        {
+            // Снимок до остановки опроса: событие ухода предмета не должно спрятать его от завершения.
+            var attachedTargets = _debugTargetsManager.GetAttachedDebugTargets();
             _debugServerListener.Stop();
 
-            if (_attached)
+            try
             {
+                if (!_attached)
+                    return;
+
+                _attached = false;
+
+                // Остановленный предмет ждёт команду. detachDebugUI её не шлёт, и сеанс на сервере остаётся стоять.
+                if (terminate)
+                    await TerminateTargets(attachedTargets);
+
                 await _measureManager.DisableOnDisconnect();
                 await _debugServerClient.DetachDebugUI(_configuration.CreateRequest<RdbgDetachDebugUiRequest>());
             }
+            finally
+            {
+                if (terminate)
+                    _debuggee.Stop();
+            }
+        }
 
-            _attached = false;
+        private async Task TerminateTargets(IReadOnlyList<DebugTargetId> targets)
+        {
+            if (targets.Count == 0)
+                return;
+
+            var request = _configuration.CreateRequest<RdbgTerminateRequest>();
+            foreach (var target in targets)
+                request.TargetId.Add(target);
+
+            // Идентификатор нужен целиком: одного uuid сервер отладки не принимает.
+            Log.Debug($"завершение предметов отладки: {targets.Count}");
+            try
+            {
+                await _debugServerClient.Terminate(request);
+            }
+            catch (Exception ex)
+            {
+                // Отказ не отменяет отключение отладчика и остановку клиента.
+                Log.Debug($"завершение предметов отладки: {ex.Message}");
+            }
         }
 
         private async Task SendStepEvent<T>(T responder, int threadId, DebugStepAction action, bool singleThread, Action? successAction = null) where T : IRequestResponder

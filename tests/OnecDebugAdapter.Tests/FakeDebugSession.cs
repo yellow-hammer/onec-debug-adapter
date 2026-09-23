@@ -19,6 +19,9 @@ namespace Onec.DebugAdapter.Tests
         public Task<RdbgStepResponse?> Step(RdbgStepRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult<RdbgStepResponse?>(null);
 
+        public Task Terminate(RdbgTerminateRequest request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public virtual Task<RdbgEvalLocalVariablesResponse?> EvalLocalVariables(RdbgEvalLocalVariablesRequest request, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 

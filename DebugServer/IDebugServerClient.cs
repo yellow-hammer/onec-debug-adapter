@@ -18,6 +18,7 @@
         Task SetBreakpoints(RdbgSetBreakpointsRequest request, CancellationToken cancellationToken = default);
         Task SetMeasureMode(RdbgSetMeasureModeRequest request, CancellationToken cancellationToken = default);
         Task<RdbgStepResponse?> Step(RdbgStepRequest request, CancellationToken cancellationToken = default);
+        Task Terminate(RdbgTerminateRequest request, CancellationToken cancellationToken = default);
         Task Test(CancellationToken cancellationToken = default);
     }
 }

@@ -71,5 +71,13 @@ namespace Onec.DebugAdapter.Tests
         {
             Assert.Equal(argument, DebuggeeProcess.HidePassword(argument));
         }
+
+        [Fact]
+        public void Остановка_без_запуска_ничего_не_делает()
+        {
+            using var process = new DebuggeeProcess(new FakeDebugConfiguration(string.Empty, []));
+
+            process.Stop();
+        }
     }
 }

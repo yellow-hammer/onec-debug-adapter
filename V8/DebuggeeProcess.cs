@@ -119,7 +119,19 @@ namespace Onec.DebugAdapter.V8
         public void Stop()
         {
             _needSendEvent = false;
-            _process?.Kill();
+            var process = _process;
+            if (process == null)
+                return;
+
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill();
+            }
+            catch (InvalidOperationException)
+            {
+                // Процесс уже завершился.
+            }
         }
 
         protected virtual void Dispose(bool disposing)
