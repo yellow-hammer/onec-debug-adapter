@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using Onec.DebugAdapter.DebugServer;
 using Onec.DebugAdapter.Services;
+using Onec.DebugAdapter.V8;
 
 namespace Onec.DebugAdapter.Tests
 {
@@ -18,6 +19,9 @@ namespace Onec.DebugAdapter.Tests
 
         public Task<RdbgStepResponse?> Step(RdbgStepRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult<RdbgStepResponse?>(null);
+
+        public Task Terminate(RdbgTerminateRequest request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
 
         public virtual Task<RdbgEvalLocalVariablesResponse?> EvalLocalVariables(RdbgEvalLocalVariablesRequest request, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -67,6 +71,8 @@ namespace Onec.DebugAdapter.Tests
         public DebugTargetId GetTargetId(int threadId) => new();
         public DebugTargetId[] GetAttachedDebugTargets() => [];
         public Task<DebugTargetId[]> GetDebugTargets() => Task.FromResult<DebugTargetId[]>([]);
+        public Task RememberTargetsBeforeClient() => Task.CompletedTask;
+        public Task<IReadOnlyList<DebugTargetId>> ClientSessionTargets() => Task.FromResult<IReadOnlyList<DebugTargetId>>([]);
         public Task SetAutoAttachTargetTypes(List<DebugTargetType> types) => Task.CompletedTask;
         public List<DebugTargetType> GetAutoAttachTargetTypes() => [];
         public Task AttachDebugTargets(List<DebugTargetId> debugTargets) => Task.CompletedTask;
@@ -74,5 +80,23 @@ namespace Onec.DebugAdapter.Tests
         public ThreadsResponse GetThreads(ThreadsArguments args) => throw new NotSupportedException();
         public int GetThreadId(DebugTargetIdLight debugTargetId) => 0;
         public bool DebugTargetAttached(DebugTargetIdLight debugTarget) => false;
+    }
+
+    /// <summary>Кэш модулей в этих проверках не нужен: до путей дело не доходит.</summary>
+    internal sealed class UnusedMetadata : IMetadataProvider
+    {
+        public Task Init(DebugProtocolClient client, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public string ModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public string? TryModulePathByInfo(string extension, string objectId, string propertyId, CancellationToken cancellationToken = default) => null;
+        public (string Extension, string ObjectId, string PropertyId) ModuleInfoByPath(string path, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public bool IsExternalModule((string Extension, string ObjectId, string PropertyId) info) => false;
+        public string ExternalModuleUrl((string Extension, string ObjectId, string PropertyId) info) => "";
+        public string ExternalModuleUrlByPath(string path) => "";
+        public string? TryModulePathByExternalUrl(string url, string propertyId) => null;
+        public string? LocalModulePath((string Extension, string ObjectId, string PropertyId) info) => null;
+        public IEnumerable<(string Extension, string ObjectId, string PropertyId)> ExtensionCounterparts((string Extension, string ObjectId, string PropertyId) info)
+            => [];
     }
 }

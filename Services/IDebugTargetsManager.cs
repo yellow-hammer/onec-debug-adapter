@@ -10,6 +10,10 @@ namespace Onec.DebugAdapter.Services
         DebugTargetId GetTargetId(int threadId);
         DebugTargetId[] GetAttachedDebugTargets();
         Task<DebugTargetId[]> GetDebugTargets();
+        /// <summary>Запоминает предметы, которые были до запуска клиента.</summary>
+        Task RememberTargetsBeforeClient();
+        /// <summary>Предметы сеанса запущенного клиента; пусто, если клиент не запускался.</summary>
+        Task<IReadOnlyList<DebugTargetId>> ClientSessionTargets();
         Task SetAutoAttachTargetTypes(List<DebugTargetType> types);
         List<DebugTargetType> GetAutoAttachTargetTypes();
         Task AttachDebugTargets(List<DebugTargetId> debugTargets);

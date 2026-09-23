@@ -21,6 +21,7 @@ namespace Onec.DebugAdapter.Services
         private readonly Dictionary<string, int> _threadIds = new();
         private readonly Dictionary<int, DebugTargetId> _attachedTargets = new();
         private readonly List<DebugTargetType> _autoAttachTargetTypes = new();
+        private HashSet<string>? _targetsBeforeClient;
 
         public DebugTargetsManager(IDebugConfiguration debugConfiguration, IDebugServerClient debugServerClient, IDebugServerListener debugServerListener)
         {
@@ -54,13 +55,37 @@ namespace Onec.DebugAdapter.Services
             };
         }
         public DebugTargetId[] GetAttachedDebugTargets()
-            => _attachedTargets.Values.ToArray();
+        {
+            lock (_threadIds)
+                return _attachedTargets.Values.ToArray();
+        }
 
         public async Task<DebugTargetId[]> GetDebugTargets()
         {
-            var response = await _debugServerClient.GetDbgTargets(_configuration.CreateRequest<RdbgsGetDbgTargetsRequest>(), _cancellation);
+            try
+            {
+                var response = await _debugServerClient.GetDbgTargets(_configuration.CreateRequest<RdbgsGetDbgTargetsRequest>(), _cancellation);
+                return response?.Id.ToArray() ?? [];
+            }
+            catch (DebugServerException ex) when (ex.StatusCode == 400)
+            {
+                // Запрос списка до attachDebugUI и после detach: отладчик на сервере не зарегистрирован.
+                return [];
+            }
+        }
 
-            return response!.Id.ToArray();
+        public async Task RememberTargetsBeforeClient()
+            => _targetsBeforeClient = (await GetDebugTargets())
+                .Select(t => t.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        public async Task<IReadOnlyList<DebugTargetId>> ClientSessionTargets()
+        {
+            if (_targetsBeforeClient == null)
+                return [];
+
+            var current = (await GetDebugTargets()).Concat(GetAttachedDebugTargets());
+            return ClientSession.Targets(_targetsBeforeClient, current);
         }
 
         public async Task SetAutoAttachTargetTypes(List<DebugTargetType> types)

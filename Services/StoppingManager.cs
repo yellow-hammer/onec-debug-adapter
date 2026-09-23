@@ -378,6 +378,40 @@ namespace Onec.DebugAdapter.Services
         public void ThreadResumed(int threadId) => _resumedThreads[threadId] = true;
 
         /// <summary>
+        /// detachDebugUI остановленный предмет не отпускает: вызов на сервере продолжает стоять,
+        /// и сеанс висит, пока сервер отладки сам не заметит пропажу отладчика.
+        /// </summary>
+        public async Task ResumeStopped(IReadOnlySet<string> exceptTargetIds)
+        {
+            var stopped = _threadsCallStack.Keys.Where(id => !_resumedThreads.ContainsKey(id)).ToList();
+            foreach (var threadId in stopped)
+            {
+                DebugTargetId target;
+                try
+                {
+                    target = _targetsManager.GetTargetId(threadId);
+                }
+                catch (KeyNotFoundException)
+                {
+                    continue;
+                }
+
+                if (exceptTargetIds.Contains(target.Id))
+                    continue;
+
+                ThreadResumed(threadId);
+                try
+                {
+                    await ContinueDebugTarget(target);
+                }
+                catch (System.Exception ex)
+                {
+                    Log.Debug($"продолжение предмета {target.TargetType} перед отключением: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
         /// Выполнение продолжено. Запрос значений мог уйти раньше и получить отказ уже на ходу:
         /// такой отказ не ошибка сессии.
         /// </summary>

@@ -22,12 +22,28 @@ namespace Onec.DebugAdapter.Tests
             using var server = StubServer.Answering(400, "Bad request", "<exception>Ошибка разбора XML</exception>");
             var client = ClientFor(server);
 
-            var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            var error = await Assert.ThrowsAsync<DebugServerException>(
                 () => client.SetBreakpoints(new RdbgSetBreakpointsRequest()));
 
             Assert.Contains("setBreakpoints", error.Message);
             Assert.Contains("400", error.Message);
             Assert.Contains("Ошибка разбора XML", error.Message);
+        }
+
+        /// <summary>
+        /// До attachDebugUI и после detach сервер отвечает на getDbgTargets кодом 400: по коду,
+        /// а не по тексту на языке платформы, такой отказ отличается от сбоя.
+        /// </summary>
+        [Fact]
+        public async Task ОтказСервераНесётКодОтвета()
+        {
+            using var server = StubServer.Answering(400, "Bad request", "<exception>UI+ - часть отладки не зарегистрирована</exception>");
+            var client = ClientFor(server);
+
+            var error = await Assert.ThrowsAsync<DebugServerException>(
+                () => client.GetDbgTargets(new RdbgsGetDbgTargetsRequest()));
+
+            Assert.Equal(400, error.StatusCode);
         }
 
         /// <summary>Имя команды нужно у каждой: по одному коду статуса не понять, что отказало.</summary>
@@ -42,7 +58,7 @@ namespace Onec.DebugAdapter.Tests
             using var server = StubServer.Answering(400, "Bad request", "<exception>отказ</exception>");
             var client = ClientFor(server);
 
-            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Call(client, command));
+            var error = await Assert.ThrowsAsync<DebugServerException>(() => Call(client, command));
 
             Assert.Contains(command, error.Message);
             Assert.Contains("отказ", error.Message);
@@ -99,6 +115,37 @@ namespace Onec.DebugAdapter.Tests
         }
 
         [Fact]
+        public async Task ЗавершениеПредметаИдётКомандойСервера()
+        {
+            using var server = StubServer.Answering(200, "OK", "");
+            var client = ClientFor(server);
+            var request = new RdbgTerminateRequest
+            {
+                InfoBaseAlias = "DefAlias",
+                IdOfDebuggerUi = "11111111-1111-1111-1111-111111111111"
+            };
+            request.TargetId.Add(new DebugTargetId
+            {
+                Id = "22222222-2222-2222-2222-222222222222",
+                SeanceId = "33333333-3333-3333-3333-333333333333",
+                SeanceNo = 1,
+                InfoBaseInstanceId = "44444444-4444-4444-4444-444444444444",
+                InfoBaseAlias = "DefAlias",
+                IsServerInfoBase = IsServerInfoBase.False,
+                ConfigVersion = "0123456789abcdef0123456789abcdef01234567",
+                TargetType = DebugTargetType.ManagedClient
+            });
+
+            await client.Terminate(request);
+
+            Assert.Contains("cmd=terminateDbgTarget", server.LastUrl, StringComparison.Ordinal);
+            Assert.Contains("<seanceId", server.LastBody, StringComparison.Ordinal);
+            Assert.Contains("<infoBaseInstanceID", server.LastBody, StringComparison.Ordinal);
+            Assert.Contains("<configVersion", server.LastBody, StringComparison.Ordinal);
+            Assert.Contains(">ManagedClient<", server.LastBody, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void УспешныйОтветОшибкиНеДаёт()
         {
             var response = new RestResponse(new RestRequest())
@@ -151,6 +198,8 @@ namespace Onec.DebugAdapter.Tests
             private readonly HttpListener _listener = new();
 
             public int Port { get; }
+            public string? LastUrl { get; private set; }
+            public string? LastBody { get; private set; }
 
             private StubServer(int port, int status, string description, string body)
             {
@@ -166,6 +215,10 @@ namespace Onec.DebugAdapter.Tests
                         try { context = await _listener.GetContextAsync(); }
                         catch (HttpListenerException) { return; }
                         catch (ObjectDisposedException) { return; }
+
+                        LastUrl = context.Request.RawUrl;
+                        using (var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8))
+                            LastBody = reader.ReadToEnd();
 
                         var bytes = Encoding.UTF8.GetBytes(body);
                         context.Response.StatusCode = status;
