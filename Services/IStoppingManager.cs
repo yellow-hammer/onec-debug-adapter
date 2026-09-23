@@ -10,6 +10,8 @@ namespace Onec.DebugAdapter.Services
         Task<SetExceptionBreakpointsResponse> SetExceptionBreakpoints(SetExceptionBreakpointsArguments args);
         Task<StackTraceResponse> GetCallStack(StackTraceArguments args);
         void ThreadResumed(int threadId);
+        /// <summary>Продолжает остановленные предметы, кроме перечисленных.</summary>
+        Task ResumeStopped(IReadOnlySet<string> exceptTargetIds);
         ScopesResponse GetScopes(ScopesArguments args);
         Task<VariablesResponse> GetVariables(VariablesArguments args);
         Task<EvaluateResponse> Evaluate(EvaluateArguments args);

@@ -70,6 +70,8 @@ namespace Onec.DebugAdapter.Tests
         public DebugTargetId GetTargetId(int threadId) => new();
         public DebugTargetId[] GetAttachedDebugTargets() => [];
         public Task<DebugTargetId[]> GetDebugTargets() => Task.FromResult<DebugTargetId[]>([]);
+        public Task RememberTargetsBeforeClient() => Task.CompletedTask;
+        public Task<IReadOnlyList<DebugTargetId>> ClientSessionTargets() => Task.FromResult<IReadOnlyList<DebugTargetId>>([]);
         public Task SetAutoAttachTargetTypes(List<DebugTargetType> types) => Task.CompletedTask;
         public List<DebugTargetType> GetAutoAttachTargetTypes() => [];
         public Task AttachDebugTargets(List<DebugTargetId> debugTargets) => Task.CompletedTask;

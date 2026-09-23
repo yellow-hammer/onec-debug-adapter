@@ -1,6 +1,3 @@
-using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
-using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
-using Onec.DebugAdapter.Extensions;
 using Onec.DebugAdapter.Services;
 using System;
 using System.Collections.Generic;
@@ -10,14 +7,25 @@ using System.Threading.Tasks;
 
 namespace Onec.DebugAdapter.V8
 {
+    /// <summary>
+    /// Клиент 1С, запущенный адаптером.
+    /// </summary>
+    /// <remarks>
+    /// Адаптер клиент не убивает: убитый клиент оставляет в кластере спящий сеанс, и тот висит
+    /// до суток. Клиент закрывается сам — по команде сервера отладки или обычным закрытием окна.
+    /// </remarks>
     public class DebuggeeProcess : IDisposable
     {
         private readonly IDebugConfiguration _configuration;
-        private DebugProtocolClient _client = null!;
-        private bool _needSendEvent = true;
+        private readonly TaskCompletionSource _exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         private Process? _process;
         private bool disposedValue;
+
+        /// <summary>Клиент завершился; аргумент — код возврата, если он известен.</summary>
+        public event Action<int?>? Exited;
+
+        public bool HasExited => _exited.Task.IsCompleted;
 
         public DebuggeeProcess(IDebugConfiguration configuration)
         {
@@ -56,10 +64,8 @@ namespace Onec.DebugAdapter.V8
                 ? "/P\"***\""
                 : argument;
 
-        public void Run(DebugProtocolClient client)
+        public void Run()
         {
-            _client = client;
-
             var connectionString = _configuration.InfoBase.Connect ?? "";
             var arguments = new List<string>
             {
@@ -93,44 +99,67 @@ namespace Onec.DebugAdapter.V8
 
             Log.Debug($"клиент 1С: {exePath} {string.Join(" ", arguments.Select(HidePassword))}");
 
-			_process = new Process
+            Process process;
+            try
             {
-                StartInfo = new ProcessStartInfo(exePath, string.Join(" ", arguments))
-				{
-					RedirectStandardError = true
-				},
-                EnableRaisingEvents = true
-            };
-			_process.Exited += DebuggeeExited;
-			_process.Start();
-        }
-
-        private void DebuggeeExited(object? sender, EventArgs e)
-        {
-            if (_needSendEvent)
+                process = DetachedLaunch.Start(exePath, string.Join(" ", arguments));
+            }
+            catch (ArgumentException)
             {
-				if (_process?.ExitCode != 0)
-					_client.SendError(_process?.StandardError.ReadToEnd() ?? "");
-
-				_client?.SendEvent(new TerminatedEvent());
-			}
-        }
-
-        public void Stop()
-        {
-            _needSendEvent = false;
-            var process = _process;
-            if (process == null)
+                // Клиент успел выйти раньше, чем адаптер его нашёл.
+                MarkExited(null);
                 return;
+            }
+
+            _process = process;
+            process.EnableRaisingEvents = true;
+            process.Exited += (_, _) => MarkExited(ExitCode(process));
+            if (process.HasExited)
+                MarkExited(ExitCode(process));
+        }
+
+        /// <summary>Ждёт выхода клиента. true, если клиент вышел за отведённое время.</summary>
+        public async Task<bool> WaitForExit(TimeSpan timeout)
+        {
+            if (_process == null)
+                return true;
+
+            return await Task.WhenAny(_exited.Task, Task.Delay(timeout)) == _exited.Task;
+        }
+
+        /// <summary>Обычное закрытие главного окна: клиент выходит сам и заканчивает свой сеанс.</summary>
+        public bool RequestClose()
+        {
+            var process = _process;
+            if (process == null || HasExited)
+                return false;
 
             try
             {
-                if (!process.HasExited)
-                    process.Kill();
+                process.Refresh();
+                return process.CloseMainWindow();
             }
             catch (InvalidOperationException)
             {
-                // Процесс уже завершился.
+                return false;
+            }
+        }
+
+        private void MarkExited(int? exitCode)
+        {
+            if (_exited.TrySetResult())
+                Exited?.Invoke(exitCode);
+        }
+
+        private static int? ExitCode(Process process)
+        {
+            try
+            {
+                return process.ExitCode;
+            }
+            catch (InvalidOperationException)
+            {
+                return null;
             }
         }
 
@@ -138,14 +167,9 @@ namespace Onec.DebugAdapter.V8
         {
             if (!disposedValue)
             {
-                Stop();
+                _process?.Dispose();
                 disposedValue = true;
             }
-        }
-
-        ~DebuggeeProcess()
-        {
-            Dispose(disposing: false);
         }
 
         public void Dispose()

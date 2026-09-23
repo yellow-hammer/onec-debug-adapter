@@ -21,6 +21,7 @@ namespace Onec.DebugAdapter.Services
         private readonly Dictionary<string, int> _threadIds = new();
         private readonly Dictionary<int, DebugTargetId> _attachedTargets = new();
         private readonly List<DebugTargetType> _autoAttachTargetTypes = new();
+        private HashSet<string>? _targetsBeforeClient;
 
         public DebugTargetsManager(IDebugConfiguration debugConfiguration, IDebugServerClient debugServerClient, IDebugServerListener debugServerListener)
         {
@@ -71,6 +72,20 @@ namespace Onec.DebugAdapter.Services
                 // Запрос списка до attachDebugUI и после detach: отладчик на сервере не зарегистрирован.
                 return [];
             }
+        }
+
+        public async Task RememberTargetsBeforeClient()
+            => _targetsBeforeClient = (await GetDebugTargets())
+                .Select(t => t.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        public async Task<IReadOnlyList<DebugTargetId>> ClientSessionTargets()
+        {
+            if (_targetsBeforeClient == null)
+                return [];
+
+            var current = (await GetDebugTargets()).Concat(GetAttachedDebugTargets());
+            return ClientSession.Targets(_targetsBeforeClient, current);
         }
 
         public async Task SetAutoAttachTargetTypes(List<DebugTargetType> types)

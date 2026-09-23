@@ -19,6 +19,12 @@ namespace Onec.DebugAdapter
     {
         static async Task Main(string[] args)
         {
+            if (args.Length == 3 && args[0] == DetachedLaunch.Argument)
+            {
+                Environment.ExitCode = DetachedLaunch.RunLauncher(args[1], args[2]);
+                return;
+            }
+
             // Необработанные исключения (в т.ч. из async void) не должны ронять процесс адаптера.
             TaskScheduler.UnobservedTaskException += (_, e) =>
             {

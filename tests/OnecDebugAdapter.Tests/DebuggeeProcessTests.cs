@@ -73,11 +73,12 @@ namespace Onec.DebugAdapter.Tests
         }
 
         [Fact]
-        public void Остановка_без_запуска_ничего_не_делает()
+        public async Task Без_запуска_клиент_считается_вышедшим()
         {
             using var process = new DebuggeeProcess(new FakeDebugConfiguration(string.Empty, []));
 
-            process.Stop();
+            Assert.False(process.RequestClose());
+            Assert.True(await process.WaitForExit(TimeSpan.Zero));
         }
     }
 }
