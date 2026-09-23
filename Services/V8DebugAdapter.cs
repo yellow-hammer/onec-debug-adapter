@@ -285,6 +285,22 @@ namespace Onec.DebugAdapter.Services
             }
         }
 
+        // Запрос без обработчика базовый класс отклоняет исключением NotImplementedException, а на
+        // любом исключении, кроме ProtocolException, библиотека останавливает протокол и адаптер
+        // завершается. VS Code шлёт такие запросы и без заявленной поддержки: source, pause.
+        protected override ResponseBody HandleProtocolRequest(string requestType, object requestArgs)
+        {
+            try
+            {
+                return base.HandleProtocolRequest(requestType, requestArgs);
+            }
+            catch (NotImplementedException)
+            {
+                Log.Debug($"запрос {requestType} не поддерживается");
+                throw new ProtocolException($"Команда отладки «{requestType}» не поддерживается");
+            }
+        }
+
         private async Task InitLaunchAttach(IRequestResponder responder, Dictionary<string, JToken> configurationArgs, bool launch)
         {
             await _configuration.Init(configurationArgs);
