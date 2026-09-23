@@ -119,6 +119,10 @@ namespace Onec.DebugAdapter.Services
             {
                 await InitLaunchAttach(responder, responder.Arguments.ConfigurationProperties, true);
             }
+            catch (DebugStartException ex)
+            {
+                SetProtocolError(responder, ex.Message);
+            }
             catch (Exception ex)
             {
                 SetProtocolError(responder, "Ошибка запуска отладки (запуск)", ex);
@@ -130,6 +134,10 @@ namespace Onec.DebugAdapter.Services
             try
             {
                 await InitLaunchAttach(responder, responder.Arguments.ConfigurationProperties, false);
+            }
+            catch (DebugStartException ex)
+            {
+                SetProtocolError(responder, ex.Message);
             }
             catch (Exception ex)
             {
@@ -286,7 +294,18 @@ namespace Onec.DebugAdapter.Services
             if (_configuration.OwnsDebugServer)
                 await _debugServer.Run(Protocol);
 
-            await _debugServerClient.Test(_cancellation);
+            try
+            {
+                await _debugServerClient.Test(_cancellation);
+            }
+            catch (Exception ex) when (!_configuration.OwnsDebugServer && ex is not OperationCanceledException)
+            {
+                Log.Debug($"сервер отладки не отвечает: {ex.Message}");
+                throw DebugStartException.DebugServerUnavailable(
+                    _configuration.DebugServerHost,
+                    _configuration.DebugServerPort,
+                    clusterService: launch && !_configuration.IsFileInfoBase);
+            }
             Log.Debug($"сервер отладки: {_configuration.DebugServerHost}:{_configuration.DebugServerPort}");
 
             var response = await _debugServerClient.AttachDebugUI(_configuration.CreateRequest<RdbgAttachDebugUiRequest>(i =>
