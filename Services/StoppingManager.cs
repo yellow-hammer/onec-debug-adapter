@@ -136,7 +136,22 @@ namespace Onec.DebugAdapter.Services
             foreach (var (moduleKey, cArgs) in _moduleSetBreakpointsArguments.ToList())
             {
                 var sourcePath = cArgs.Source.Path.CapitalizeFirstChar();
-                var (extension, objectId, propertyId) = _metadataProvider.ModuleInfoByPath(sourcePath);
+                (string Extension, string ObjectId, string PropertyId) info;
+                try
+                {
+                    info = _metadataProvider.ModuleInfoByPath(sourcePath);
+                }
+                catch (KeyNotFoundException ex)
+                {
+                    // Модуль вне структуры конфигурации в запрос не попадает: точки остальных модулей ставятся.
+                    Log.Debug($"точки: {ex.Message}");
+                    if (string.Equals(moduleKey, requestedKey, StringComparison.OrdinalIgnoreCase))
+                        debuggerResponse.Breakpoints = cArgs.Breakpoints
+                            .Select(bp => new Breakpoint() { Line = bp.Line, Source = args.Source, Verified = false, Message = ex.Message })
+                            .ToList();
+                    continue;
+                }
+                var (extension, objectId, propertyId) = info;
 
                 var moduleInfo = new ModuleBpInfoInternal()
                 {
