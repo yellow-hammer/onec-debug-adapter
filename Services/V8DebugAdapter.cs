@@ -22,6 +22,7 @@ namespace Onec.DebugAdapter.Services
         private Task? _endClientTask;
         private IReadOnlySet<string> _clientTargetIds = new HashSet<string>();
         private int _terminatedSent;
+        private volatile bool _serverLost;
 
         // Клиент выходит по команде сервера отладки за секунды; запас — на медленный сервер и
         // обработчики завершения конфигурации.
@@ -66,6 +67,7 @@ namespace Onec.DebugAdapter.Services
 			_debugServer = debugServer;
             _debuggee = debuggee;
 
+            _debugServerListener.DebugServerLost += DebugServerLost;
 		}
 
         public async Task Run(Stream input, Stream output, CancellationToken cancellationToken = default)
@@ -373,6 +375,13 @@ namespace Onec.DebugAdapter.Services
             };
         }
 
+        private void DebugServerLost(object? sender, string reason)
+        {
+            _serverLost = true;
+            Protocol.SendError(reason);
+            SendTerminated();
+        }
+
         private Task Disconnect()
         {
             lock (_disconnectGate)
@@ -381,9 +390,11 @@ namespace Onec.DebugAdapter.Services
 
         private async Task DisconnectCore()
         {
-            if (!_attached)
+            // Потерянный сервер отладки отладчика уже не знает: отключать на нём нечего.
+            if (!_attached || _serverLost)
             {
                 _debugServerListener.Stop();
+                _attached = false;
                 return;
             }
 

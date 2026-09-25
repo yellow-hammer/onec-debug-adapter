@@ -58,8 +58,10 @@ namespace Onec.DebugAdapter.Tests
         public event EventHandler<ShowMetadataObjectArgs>? ShowMetadataObject;
         public event EventHandler<MeasureResultsEventArgs>? MeasureResults;
 #pragma warning restore CS0067
+        public event EventHandler<string>? DebugServerLost;
 
         public void RaiseCallStackFormed(CallStackFormedEventArgs args) => CallStackFormed?.Invoke(this, args);
+        public void RaiseDebugServerLost(string reason) => DebugServerLost?.Invoke(this, reason);
 
         public void Run(DebugProtocolClient debugProtocolClient, CancellationToken cancellationToken) { }
         public void Stop() { }
