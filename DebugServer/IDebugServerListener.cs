@@ -14,6 +14,8 @@ namespace Onec.DebugAdapter.DebugServer
         event EventHandler<ProcessForegroundHelperArgs>? ProcessForegroundHelper;
         event EventHandler<ShowMetadataObjectArgs>? ShowMetadataObject;
         event EventHandler<MeasureResultsEventArgs>? MeasureResults;
+        /// <summary>Отладка на сервере отладки закончилась, аргумент называет причину.</summary>
+        event EventHandler<string>? DebugServerLost;
 
         void Run(DebugProtocolClient debugProtocolClient, CancellationToken cancellationToken);
         void Stop();

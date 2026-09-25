@@ -13,6 +13,7 @@ namespace Onec.DebugAdapter.DebugServer
     {
         private CancellationToken _cancellation;
         private volatile bool _stopped;
+        private static readonly TimeSpan UnavailableTimeout = TimeSpan.FromSeconds(10);
 
         private readonly IDebugServerClient _debugServerClient;
         private readonly IDebugConfiguration _debugConfiguration;
@@ -28,6 +29,7 @@ namespace Onec.DebugAdapter.DebugServer
         public event EventHandler<ProcessForegroundHelperArgs>? ProcessForegroundHelper;
         public event EventHandler<ShowMetadataObjectArgs>? ShowMetadataObject;
         public event EventHandler<MeasureResultsEventArgs>? MeasureResults;
+        public event EventHandler<string>? DebugServerLost;
 
         public DebugServerListener(IDebugConfiguration debugConfiguration, IDebugServerClient debugServerClient)
         {
@@ -47,6 +49,7 @@ namespace Onec.DebugAdapter.DebugServer
             var maxDelay = _debugConfiguration.PollMaxDelayMs;
             var delay = minDelay;
             string? lastErrorMessage = null;
+            var liveness = new DebugServerLiveness(UnavailableTimeout);
 
             Task.Run(async () =>
             {
@@ -57,6 +60,7 @@ namespace Onec.DebugAdapter.DebugServer
                         var response = await _debugServerClient.PingDebugUiParams(_debugConfiguration.DebuggerID, cancellationToken);
                         var commands = response?.Result ?? new();
                         lastErrorMessage = null;
+                        liveness.Succeeded();
 
                         // Адаптивный бэкофф: пришли команды — опрашиваем часто, простаиваем — реже.
                         delay = commands.Count > 0 ? minDelay : Math.Min(maxDelay, delay * 2);
@@ -116,6 +120,15 @@ namespace Onec.DebugAdapter.DebugServer
                         // При остановке сессии ошибки опроса ожидаемы — выходим молча.
                         if (_stopped || _cancellation.IsCancellationRequested)
                             break;
+
+                        var lost = liveness.Failed(ex, DateTime.UtcNow);
+                        if (lost != null)
+                        {
+                            Log.Debug($"опрос сервера отладки: {ex.Message}");
+                            _stopped = true;
+                            DebugServerLost?.Invoke(this, lost);
+                            break;
+                        }
 
                         // Одинаковая ошибка на каждом цикле опроса — сообщаем один раз, не заваливая консоль.
                         if (ex.Message != lastErrorMessage)
